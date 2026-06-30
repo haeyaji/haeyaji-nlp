@@ -1,0 +1,18 @@
+# 환경/비밀
+.env
+
+# 로그 = 학습데이터 (각자 로컬에 쌓임, 커밋 X)
+data/logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
