@@ -35,7 +35,11 @@ class TodoItem(BaseModel):
     place_name: str | None = Field(
         default=None, description="연결된 실제 장소 이름 (장소 기반 추천일 때만)"
     )
+    # 아래는 LLM이 아니라 코드가 실제 카카오 Place에서 채운다 (지도 마커/거리용)
     place_url: str | None = Field(default=None, description="카카오맵 링크")
+    x: float | None = Field(default=None, description="경도 (지도 마커)")
+    y: float | None = Field(default=None, description="위도 (지도 마커)")
+    distance_m: int | None = Field(default=None, description="현재 위치에서 거리(m)")
 
 
 class TodoRecommendation(BaseModel):

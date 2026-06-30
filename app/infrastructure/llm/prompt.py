@@ -57,9 +57,9 @@ _FEWSHOT_ASSISTANT = (
     '{"analysis":"맑은 주말 오전에 기분도 좋음 — 외부 활동과 생산적인 일을 섞기 좋다.",'
     '"todos":['
     '{"title":"한강시민공원에서 자전거 타기","reason":"맑은 날씨+활기참, 주말 오전에 최적",'
-    '"category":"야외","estimated_minutes":60,"place_name":"한강시민공원","place_url":null},'
+    '"category":"야외","estimated_minutes":60,"place_name":"한강시민공원"},'
     '{"title":"밀린 방 청소하기","reason":"에너지 높을 때 미뤄둔 일 처리하기 좋음",'
-    '"category":"생산성","estimated_minutes":40,"place_name":null,"place_url":null}'
+    '"category":"생산성","estimated_minutes":40,"place_name":null}'
     "]}"
 )
 
