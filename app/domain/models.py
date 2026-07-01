@@ -1,6 +1,7 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 Category = Literal["야외", "실내", "휴식", "생산성", "사람만나기", "맛집/카페"]
 
@@ -8,7 +9,16 @@ Category = Literal["야외", "실내", "휴식", "생산성", "사람만나기",
 Intent = Literal["recommend", "info", "chat"]
 
 
-class Turn(BaseModel):
+class CamelModel(BaseModel):
+    """API 경계 모델: 출력은 camelCase, 입력은 camel/snake 둘 다 허용.
+
+    내부 파이썬 코드는 계속 snake_case로 접근한다(populate_by_name).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class Turn(CamelModel):
     """대화 히스토리 한 턴. be가 세션에서 최근 N턴을 구성해 전달한다."""
 
     role: Literal["user", "assistant"]
@@ -27,7 +37,7 @@ class Place(BaseModel):
     y: float | None = None  # 위도
 
 
-class TodoItem(BaseModel):
+class TodoItem(CamelModel):
     title: str = Field(description="할 일 한 줄")
     reason: str = Field(description="왜 지금 이걸 추천하는지 (상황 근거)")
     category: Category
@@ -47,7 +57,7 @@ class TodoRecommendation(BaseModel):
     todos: list[TodoItem] = Field(description="추천 할 일 3~5개")
 
 
-class UserProfile(BaseModel):
+class UserProfile(CamelModel):
     """사용자 선호 프로필. be가 설문/선택이력으로 채워 전달한다.
 
     전부 선택값 — 없으면(신규 유저) 일반 추천으로 동작.

@@ -1,9 +1,9 @@
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from app.domain.models import Intent, TodoItem, Turn, UserProfile
+from app.domain.models import CamelModel, Intent, TodoItem, Turn, UserProfile
 
 
-class MessageRequest(BaseModel):
+class MessageRequest(CamelModel):
     """사용자 메시지 + 맥락. 위치는 항상 들어오고(geolocation), 나머지는 선택."""
 
     text: str = Field(..., description="사용자가 입력한 자유 텍스트", examples=["비 오는데 뭐하지"])
@@ -22,7 +22,7 @@ class MessageRequest(BaseModel):
     )
 
 
-class MessageResponse(BaseModel):
+class MessageResponse(CamelModel):
     """모든 인텐트 공통 응답. reply는 항상, todos는 추천일 때만 채워진다."""
 
     intent: Intent
