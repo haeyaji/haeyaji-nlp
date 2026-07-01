@@ -20,6 +20,10 @@ class MessageRequest(CamelModel):
     history: list[Turn] = Field(
         default_factory=list, description="최근 대화 턴 (be가 세션에서 구성). 없으면 단발 처리."
     )
+    # 내부용: 분류기가 추출한 검색어를 service가 채워 핸들러로 전달 (클라이언트는 안 보냄)
+    search_keywords: list[str] = Field(
+        default_factory=list, description="내부용(service가 채움): 검색할 장소 종류"
+    )
 
 
 class MessageResponse(CamelModel):

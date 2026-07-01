@@ -25,6 +25,17 @@ class Turn(CamelModel):
     content: str
 
 
+class Analysis(BaseModel):
+    """분류기(LLM) 출력. intent + 사용자가 찾는 검색어 추출.
+
+    keywords: 텍스트에서 뽑은 '장소 종류/활동' 카카오 검색어 (PC방·볼링장·맛집 등).
+    하드코딩 리스트로 못 잡는 임의 카테고리를 LLM이 직접 추출한다. 없으면 [].
+    """
+
+    intent: Intent
+    keywords: list[str] = Field(default_factory=list)
+
+
 class Place(BaseModel):
     """카카오에서 가져온 실제 장소 (RAG 데이터)."""
 
@@ -55,6 +66,29 @@ class TodoItem(CamelModel):
 class TodoRecommendation(BaseModel):
     analysis: str = Field(description="현재 상황 한 문장 분석")
     todos: list[TodoItem] = Field(description="추천 할 일 3~5개")
+
+
+class PlannedTodo(BaseModel):
+    """LLM이 생성하는 '계획' 단위. 실제 장소는 코드가 search_query로 검색해 채운다.
+
+    LLM은 활동/카테고리와 '검색어'만 정한다(가게 이름을 지어내지 않음 = 환각 차단).
+    """
+
+    title: str = Field(description="구체적 할 일 한 줄")
+    reason: str = Field(description="왜 지금 이걸 추천하는지")
+    category: Category
+    estimated_minutes: int = Field(description="예상 소요 시간(분)")
+    search_query: str | None = Field(
+        default=None,
+        description="이 활동에 맞는 카카오 검색어(북카페/라멘/전시회 등). 장소 불필요 시 null",
+    )
+
+
+class RecommendationPlan(BaseModel):
+    """LLM 출력: 상황 분석 + 활동 계획 목록. 장소는 아직 안 붙음."""
+
+    analysis: str = Field(description="현재 상황 한 문장 분석")
+    todos: list[PlannedTodo] = Field(description="추천 활동 3~5개")
 
 
 class UserProfile(CamelModel):
