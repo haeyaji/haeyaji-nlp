@@ -15,16 +15,23 @@ class KakaoPlaceFinder:
         )
 
     async def search(
-        self, query: str, lat: float, lng: float, radius_m: int, size: int = 5
+        self,
+        query: str,
+        lat: float,
+        lng: float,
+        radius_m: int,
+        size: int = 5,
+        sort: str = "accuracy",
     ) -> list[Place]:
-        # x=경도, y=위도, radius(m)를 넣어야 거리순 정렬 + distance가 채워진다.
+        # x=경도, y=위도, radius(m)를 넣으면 distance가 채워진다.
+        # sort=accuracy: 카카오 랭킹(유명·검증된 곳 우선) / distance: 최단거리순.
         params = {
             "query": query,
             "x": lng,
             "y": lat,
             "radius": radius_m,
             "size": size,
-            "sort": "distance",
+            "sort": sort,
         }
         resp = await self._client.get(_KAKAO_URL, params=params)
         resp.raise_for_status()

@@ -25,7 +25,8 @@ class InfoHandler:
         radius = req.radius_m or self._default_radius
 
         # 장소 관련 질문일 수 있으니 주변 장소를 맥락으로 제공 (가볍게 3개씩)
-        queries = pick_search_queries(req.weather, req.mood, req.text) or ["카페"]
+        # 분류기가 뽑은 키워드 우선, 없으면 날씨·기분 규칙
+        queries = req.search_keywords or pick_search_queries(req.weather, req.mood, req.text) or ["카페"]
         results = await asyncio.gather(
             *(self._places.search(q, req.lat, req.lng, radius, 3) for q in queries)
         )
