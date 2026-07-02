@@ -26,14 +26,20 @@ class Turn(CamelModel):
 
 
 class Analysis(BaseModel):
-    """분류기(LLM) 출력. intent + 사용자가 찾는 검색어 추출.
+    """분류기(LLM) 출력 — 요청을 슬롯으로 분해해 '점점 좁히기'의 입력이 된다.
 
-    keywords: 텍스트에서 뽑은 '장소 종류/활동' 카카오 검색어 (PC방·볼링장·맛집 등).
-    하드코딩 리스트로 못 잡는 임의 카테고리를 LLM이 직접 추출한다. 없으면 [].
+    keywords: [무엇] 찾는 '장소 종류/활동' 카카오 검색어 (PC방·볼링장·맛집 등).
+      하드코딩 리스트로 못 잡는 임의 카테고리를 LLM이 직접 추출한다. 없으면 [].
+    prefer:   [필터] 랭킹 선호. "유명한/핫한"→famous(정확도순), "가까운/근처"→near(거리순).
+    vague:    [좁힘] 아무 힌트 없는 막연한 추천 요청("그냥 추천해줘")이면 True.
+      → 결과에 좁히기 안내를 덧붙이거나(기본), 맥락도 없으면 되묻는다.
+    (위치 슬롯은 location_extractor+geocoder가 별도로 해석한다)
     """
 
     intent: Intent
     keywords: list[str] = Field(default_factory=list)
+    prefer: Literal["famous", "near"] | None = None
+    vague: bool = False
 
 
 class Place(BaseModel):

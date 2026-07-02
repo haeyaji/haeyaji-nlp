@@ -1,0 +1,134 @@
+import asyncio
+
+from app.api.schemas import MessageRequest, MessageResponse
+from app.application.message_service import MessageService
+from app.domain.models import Analysis
+
+
+class _FakeClassifier:
+    def __init__(self, analysis: Analysis):
+        self._analysis = analysis
+
+    async def classify(self, text, history=None):
+        return self._analysis
+
+
+class _FakeGeocoder:
+    async def geocode(self, query):
+        return None  # 지역 없음 → 현재 위치 유지
+
+
+class _AnywhereGeocoder:
+    """뭘 물어도 좌표를 주는 지오코더 — 잘못된 후보가 넘어오면 중심이 튄다."""
+
+    async def geocode(self, query):
+        return (35.0, 129.0)
+
+
+class _CaptureHandler:
+    """핸들러로 들어온 req를 캡처해 슬롯 매핑을 검증한다."""
+
+    def __init__(self):
+        self.seen: MessageRequest | None = None
+
+    async def handle(self, req: MessageRequest) -> MessageResponse:
+        self.seen = req
+        return MessageResponse(intent="recommend", reply="분석.", todos=[])
+
+
+def _service(analysis: Analysis, handler=None):
+    handler = handler or _CaptureHandler()
+    svc = MessageService(
+        classifier=_FakeClassifier(analysis),
+        geocoder=_FakeGeocoder(),
+        recommend_handler=handler,
+        info_handler=handler,
+        chat_handler=handler,
+    )
+    return svc, handler
+
+
+def _req(**kwargs):
+    base = dict(text="아무거나", lat=37.5, lng=127.0)
+    base.update(kwargs)
+    return MessageRequest(**base)
+
+
+def test_prefer_near_maps_to_distance_sort():
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], prefer="near"))
+    asyncio.run(svc.handle(_req(text="가까운 밥집", mood="배고픔")))
+    assert handler.seen.search_sort == "distance"
+    assert handler.seen.search_keywords == ["맛집"]
+
+
+def test_default_sort_is_accuracy():
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"]))
+    asyncio.run(svc.handle(_req(text="유명한 밥집", mood="배고픔")))
+    assert handler.seen.search_sort == "accuracy"
+
+
+def test_geo_keyword_filtered():
+    # 분류기가 지역명을 keywords에 섞어도 검색어에서 제외된다
+    svc, handler = _service(Analysis(intent="recommend", keywords=["강남역", "방탈출"]))
+    asyncio.run(svc.handle(_req(text="강남역 방탈출", mood="심심")))
+    assert handler.seen.search_keywords == ["방탈출"]
+
+
+def test_vague_without_context_asks_back():
+    # 막연 + 기분/대화 없음 → 핸들러 안 가고 1회 되묻기
+    svc, handler = _service(Analysis(intent="recommend", vague=True))
+    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘")))
+    assert handler.seen is None  # 핸들러 미호출
+    assert resp.todos == []
+    assert "어떤" in resp.reply  # 되묻는 문장
+
+
+def test_place_type_word_never_moves_center():
+    # "PC방 가고싶어"의 'PC방'(장소종류)이 지역으로 오인돼 중심이 튀면 안 됨
+    handler = _CaptureHandler()
+    svc = MessageService(
+        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["PC방"])),
+        geocoder=_AnywhereGeocoder(),
+        recommend_handler=handler,
+        info_handler=handler,
+        chat_handler=handler,
+    )
+    asyncio.run(svc.handle(_req(text="PC방 가고싶어", mood="심심")))
+    assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)  # 현재 위치 유지
+
+
+def test_food_word_never_moves_center():
+    # '밥집'은 분류기 keywords가 "맛집"으로 정규화돼도 장소종류 사전으로 걸러진다
+    handler = _CaptureHandler()
+    svc = MessageService(
+        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["맛집"])),
+        geocoder=_AnywhereGeocoder(),
+        recommend_handler=handler,
+        info_handler=handler,
+        chat_handler=handler,
+    )
+    asyncio.run(svc.handle(_req(text="밥집 가고싶어", mood="배고픔")))
+    assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)
+
+
+def test_geo_keyword_does_not_block_center_move():
+    # 분류기가 keywords에 '강남역'을 잘못 섞어도 위치 해석(중심 이동)은 살아야 함
+    handler = _CaptureHandler()
+    svc = MessageService(
+        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["강남역"])),
+        geocoder=_AnywhereGeocoder(),
+        recommend_handler=handler,
+        info_handler=handler,
+        chat_handler=handler,
+    )
+    asyncio.run(svc.handle(_req(text="강남역 갈 건데 유명한 거 추천", mood="설렘")))
+    assert (handler.seen.lat, handler.seen.lng) == (35.0, 129.0)  # 중심 이동됨
+    assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
+
+
+def test_vague_with_mood_still_recommends():
+    # 막연해도 기분(맥락)이 있으면 추천은 진행된다
+    svc, handler = _service(Analysis(intent="recommend", vague=True))
+    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="무기력")))
+    assert handler.seen is not None  # 핸들러 호출됨
+    assert resp.intent == "recommend"

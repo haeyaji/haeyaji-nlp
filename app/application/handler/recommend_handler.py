@@ -44,9 +44,9 @@ class RecommendHandler:
             history=req.history,
         )
 
-        # ② 각 활동의 검색 후보를 병렬로 모으고
+        # ② 각 활동의 검색 후보를 병렬로 모으고 (정렬은 요청 필터 슬롯: 가까운→distance)
         candidates = await asyncio.gather(
-            *(self._search(p, req.lat, req.lng, radius) for p in plan.todos)
+            *(self._search(p, req.lat, req.lng, radius, req.search_sort) for p in plan.todos)
         )
 
         # ③ 서로 다른 장소로 배정 (같은 곳 중복 방지)
@@ -60,7 +60,7 @@ class RecommendHandler:
         return MessageResponse(intent="recommend", reply=plan.analysis, todos=todos)
 
     async def _search(
-        self, planned: PlannedTodo, lat: float, lng: float, radius: int
+        self, planned: PlannedTodo, lat: float, lng: float, radius: int, sort: str
     ) -> list[Place]:
         """검색어 후보(LLM 검색어 → 제목 키워드)로 카카오 검색. 결과 있으면 반환.
 
@@ -77,7 +77,7 @@ class RecommendHandler:
         for query in queries:
             try:
                 places = await self._places.search(
-                    query, lat, lng, radius, self._size, sort="accuracy"
+                    query, lat, lng, radius, self._size, sort=sort
                 )
             except (httpx.HTTPError, KeyError, ValueError):
                 continue  # 검색 실패 → 다음 후보
