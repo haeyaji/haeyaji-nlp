@@ -167,29 +167,41 @@ _CLASSIFY_SYSTEM = """사용자 메시지를 분석해 intent와 keywords를 JSO
 직전 대화가 있으면 후속 질문도 맥락으로 분류한다.
 recommend와 info 사이가 애매하면 recommend. 작업 요청·도메인 밖 추천은 chat.
 
-[keywords] 사용자가 찾는 '장소 종류/활동'을 카카오 지도 검색어 배열로 뽑는다.
+[keywords — 무엇] 사용자가 찾는 '장소 종류/활동'을 카카오 지도 검색어 배열로 뽑는다.
 - 그대로 검색 가능한 장소 명사로 정규화한다: 밥집/배고파→["맛집"], "피방/피시방/PC방"→["PC방"],
   "볼링"→["볼링장"], "당구"→["당구장"], "책 읽을 데"→["북카페","도서관"], "술 한잔"→["술집"].
 - 여러 개면 여러 개. 특정 장소 종류를 안 밝히면(그냥 "심심"/"뭐하지"/"놀 데") [] 로 둔다(날씨·기분으로 자동 추천).
 - 지역명(강남역/판교 등)은 keywords에 넣지 않는다(그건 위치임).
 - intent가 recommend가 아니면 keywords는 [].
+
+[prefer — 필터] 어떤 곳을 우선할지.
+- "유명한/핫한/인기/소문난/맛집으로 유명" → "famous"
+- "가까운/근처/걸어서 갈/바로 옆" → "near"
+- 언급 없으면 null.
+
+[vague — 막연함] 뭘 원하는지 아무 힌트가 없는 추천 요청이면 true.
+- true 예: "그냥 추천해줘", "추천", "아무거나".
+- 힌트가 하나라도 있으면 false: 장소 종류("밥집"), 분위기("조용한 데"), 기분/상태("심심해","우울해"), 활동("놀 데").
 JSON만 답한다."""
 
-# few-shot — (텍스트, intent, keywords)
-_CLASSIFY_FEWSHOT: list[tuple[str, str, list[str]]] = [
-    ("비 오는데 조용한 데 가고싶어", "recommend", []),
-    ("심심한데 뭐하지", "recommend", []),
-    ("강남역 맛집 추천해줘", "recommend", ["맛집"]),
-    ("홍대 방탈출 하고싶어", "recommend", ["방탈출카페"]),
-    ("PC방 가고싶다", "recommend", ["PC방"]),
-    ("볼링 치러 갈까", "recommend", ["볼링장"]),
-    ("배고파 밥 먹을 데", "recommend", ["맛집"]),
-    ("김치찌개 레시피 추천해줘", "chat", []),
-    ("노래 추천해줘", "chat", []),
-    ("오늘 날씨 어때?", "info", []),
-    ("근처 카페 사람 많아?", "info", []),
-    ("안녕! 너 누구야?", "chat", []),
-    ("파이썬으로 정렬 코드 짜줘", "chat", []),
+# few-shot — (텍스트, intent, keywords, prefer, vague)
+_CLASSIFY_FEWSHOT: list[tuple[str, str, list[str], str | None, bool]] = [
+    ("그냥 추천해줘", "recommend", [], None, True),
+    ("비 오는데 조용한 데 가고싶어", "recommend", [], None, False),
+    ("심심한데 뭐하지", "recommend", [], None, False),
+    ("강남역 맛집 추천해줘", "recommend", ["맛집"], None, False),
+    ("강남역 갈 건데 거기서 유명한 거 추천", "recommend", [], "famous", False),
+    ("가까운 밥집 추천해줘", "recommend", ["맛집"], "near", False),
+    ("홍대 방탈출 하고싶어", "recommend", ["방탈출카페"], None, False),
+    ("PC방 가고싶다", "recommend", ["PC방"], None, False),
+    ("볼링 치러 갈까", "recommend", ["볼링장"], None, False),
+    ("배고파 밥 먹을 데", "recommend", ["맛집"], None, False),
+    ("김치찌개 레시피 추천해줘", "chat", [], None, False),
+    ("노래 추천해줘", "chat", [], None, False),
+    ("오늘 날씨 어때?", "info", [], None, False),
+    ("근처 카페 사람 많아?", "info", [], None, False),
+    ("안녕! 너 누구야?", "chat", [], None, False),
+    ("파이썬으로 정렬 코드 짜줘", "chat", [], None, False),
 ]
 
 _INFO_SYSTEM = """너는 할 일 추천 비서다. 사용자의 정보 질문에 답한다.
@@ -216,9 +228,12 @@ def build_classify_messages(text: str, history: list[Turn] | None = None) -> lis
     import json
 
     msgs: list[dict] = [{"role": "system", "content": _CLASSIFY_SYSTEM}]
-    for ex_text, ex_intent, ex_kw in _CLASSIFY_FEWSHOT:
+    for ex_text, ex_intent, ex_kw, ex_prefer, ex_vague in _CLASSIFY_FEWSHOT:
         msgs.append({"role": "user", "content": ex_text})
-        answer = json.dumps({"intent": ex_intent, "keywords": ex_kw}, ensure_ascii=False)
+        answer = json.dumps(
+            {"intent": ex_intent, "keywords": ex_kw, "prefer": ex_prefer, "vague": ex_vague},
+            ensure_ascii=False,
+        )
         msgs.append({"role": "assistant", "content": answer})
     msgs.extend(_history_messages(history))
     msgs.append({"role": "user", "content": text})

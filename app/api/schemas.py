@@ -24,6 +24,10 @@ class MessageRequest(CamelModel):
     search_keywords: list[str] = Field(
         default_factory=list, description="내부용(service가 채움): 검색할 장소 종류"
     )
+    search_sort: str = Field(
+        "accuracy",
+        description='내부용(service가 채움): 정렬. "가까운" 요청이면 distance, 기본 accuracy',
+    )
 
 
 class MessageResponse(CamelModel):
