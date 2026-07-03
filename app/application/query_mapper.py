@@ -48,6 +48,24 @@ _VIBE_RULES: list[tuple[tuple[str, ...], list[str]]] = [
 # 집/온라인 활동 표시어 — 이게 있으면 장소를 붙이지 않는다
 _HOME_HINT = ("집에서", "집안", "온라인", "홈트", "홈 트", "재택", "방에서", "실내에서 혼자")
 
+# 검색어 → 카카오 category_group_code 하드 필터.
+# "맛집"(FD6=음식점) 검색에 카페(CE7)가 섞이는 것을 API 레벨에서 원천 차단한다.
+_CATEGORY_GROUP: dict[str, str] = {
+    # 음식점 (FD6)
+    "맛집": "FD6", "한식": "FD6", "중식": "FD6", "일식": "FD6", "양식": "FD6",
+    "분식": "FD6", "고기": "FD6", "치킨": "FD6", "피자": "FD6", "버거": "FD6",
+    "국밥": "FD6", "라멘": "FD6", "브런치": "FD6", "술집": "FD6", "야식": "FD6",
+    # 카페 (CE7)
+    "카페": "CE7", "북카페": "CE7", "디저트": "CE7",
+    # 문화시설 (CT1)
+    "전시회": "CT1", "미술관": "CT1", "박물관": "CT1", "영화관": "CT1",
+}
+
+
+def category_code_for(query: str) -> str | None:
+    """검색어에 해당하는 카카오 category_group_code (모르는 검색어는 None=필터 없음)."""
+    return _CATEGORY_GROUP.get(query)
+
 
 def keyword_from_text(text: str) -> str | None:
     """텍스트에 명시된 장소 종류 하나를 반환 (없으면 None).

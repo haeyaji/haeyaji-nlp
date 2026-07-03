@@ -19,7 +19,9 @@ class _FakeRecommender:
 
 
 class _FakePlaceFinder:
-    async def search(self, query, lat, lng, radius_m, size=5, sort="accuracy"):
+    async def search(
+        self, query, lat, lng, radius_m, size=5, sort="accuracy", category_group_code=None
+    ):
         return [
             Place(name="OO북카페", category="카페", address="서울",
                   url="http://k/1", distance_m=100, x=127.0, y=37.5)

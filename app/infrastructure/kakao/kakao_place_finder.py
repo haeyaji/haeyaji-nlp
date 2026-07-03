@@ -22,9 +22,11 @@ class KakaoPlaceFinder:
         radius_m: int,
         size: int = 5,
         sort: str = "accuracy",
+        category_group_code: str | None = None,
     ) -> list[Place]:
         # x=경도, y=위도, radius(m)를 넣으면 distance가 채워진다.
         # sort=accuracy: 카카오 랭킹(유명·검증된 곳 우선) / distance: 최단거리순.
+        # category_group_code: FD6(음식점)/CE7(카페) 등 — 다른 종류 섞임 방지 하드 필터.
         params = {
             "query": query,
             "x": lng,
@@ -33,6 +35,8 @@ class KakaoPlaceFinder:
             "size": size,
             "sort": sort,
         }
+        if category_group_code:
+            params["category_group_code"] = category_group_code
         resp = await self._client.get(_KAKAO_URL, params=params)
         resp.raise_for_status()
         docs = resp.json().get("documents", [])
