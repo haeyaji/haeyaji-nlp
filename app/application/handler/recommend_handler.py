@@ -46,15 +46,34 @@ class RecommendHandler:
             history=req.history,
         )
 
+        # ①-b 확정 종류의 카테고리 코드(맛집→FD6 등)가 있으면, 다른 종류의 계획을
+        #     코드로 걸러낸다 (LLM이 focus 지시를 어기고 카페 등을 끼워넣는 것 방지)
+        focus_codes = {
+            code for kw in req.search_keywords if (code := category_code_for(kw))
+        }
+        todos_plan = plan.todos
+        if focus_codes:
+            kept = [
+                p
+                for p in todos_plan
+                if not p.search_query
+                or category_code_for(p.search_query) in focus_codes
+                or category_code_for(p.search_query) is None
+            ]
+            todos_plan = kept or todos_plan  # 전부 걸러지면 원본 유지 (빈 추천 방지)
+
         # ② 각 활동의 검색 후보를 병렬로 모으고 (정렬은 요청 필터 슬롯: 가까운→distance)
         candidates = await asyncio.gather(
-            *(self._search(p, req.lat, req.lng, radius, req.search_sort) for p in plan.todos)
+            *(
+                self._search(p, req.lat, req.lng, radius, req.search_sort, focus_codes)
+                for p in todos_plan
+            )
         )
 
         # ③ 서로 다른 장소로 배정 (같은 곳 중복 방지)
         used: set[str] = set()
         todos: list[TodoItem] = []
-        for planned, places in zip(plan.todos, candidates):
+        for planned, places in zip(todos_plan, candidates):
             todos.append(self._assign(planned, places, used))
 
         result = TodoRecommendation(analysis=plan.analysis, todos=todos)
@@ -62,7 +81,13 @@ class RecommendHandler:
         return MessageResponse(intent="recommend", reply=plan.analysis, todos=todos)
 
     async def _search(
-        self, planned: PlannedTodo, lat: float, lng: float, radius: int, sort: str
+        self,
+        planned: PlannedTodo,
+        lat: float,
+        lng: float,
+        radius: int,
+        sort: str,
+        focus_codes: set[str] | None = None,
     ) -> list[Place]:
         """검색어 후보(LLM 검색어 → 제목 키워드)로 카카오 검색. 결과 있으면 반환.
 
@@ -77,11 +102,15 @@ class RecommendHandler:
             queries.append(title_kw)
 
         for query in queries:
+            # 아는 검색어는 카카오 카테고리 하드 필터 (맛집=FD6 → 카페 섞임 차단).
+            # 모르는 검색어("현지 맛집" 등)라도 확정 종류가 하나면 그 코드로 강제.
+            code = category_code_for(query)
+            if code is None and focus_codes and len(focus_codes) == 1:
+                code = next(iter(focus_codes))
             try:
-                # 아는 검색어는 카카오 카테고리 하드 필터 (맛집=FD6 → 카페 섞임 차단)
                 places = await self._places.search(
                     query, lat, lng, radius, self._size, sort=sort,
-                    category_group_code=category_code_for(query),
+                    category_group_code=code,
                 )
             except (httpx.HTTPError, KeyError, ValueError):
                 continue  # 검색 실패 → 다음 후보
