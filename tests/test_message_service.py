@@ -141,9 +141,13 @@ def test_geo_keyword_does_not_block_center_move():
     assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
 
 
-def test_vague_with_mood_still_recommends():
-    # 막연해도 기분(맥락)이 있으면 추천은 진행된다
-    svc, handler = _service(Analysis(intent="recommend", vague=True))
-    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="무기력")))
-    assert handler.seen is not None  # 핸들러 호출됨
-    assert resp.intent == "recommend"
+def test_vague_asks_even_with_mood():
+    # LLM이 부족하다고 판단하면 기분이 있어도 좁히기 질문 (포위망)
+    svc, handler = _service(
+        Analysis(intent="recommend", vague=True, question="뭐가 당기세요?",
+                 options=["먹으러 가기", "카페", "놀거리"])
+    )
+    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="심심")))
+    assert handler.seen is None  # 핸들러 미호출 (되묻기)
+    assert resp.reply == "뭐가 당기세요?"
+    assert resp.options == ["먹으러 가기", "카페", "놀거리"]
