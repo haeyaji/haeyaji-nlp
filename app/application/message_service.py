@@ -12,11 +12,11 @@ from app.application.query_mapper import keyword_from_text
 # (강남역/성수동 → 제외, PC방/볼링장/방탈출카페 → 유지)
 _GEO_SUFFIX = re.compile(r"(역|동|구|시|군|읍|면|리)$")
 
-# 막연한 요청 + 맥락(기분/대화)도 없을 때 1회 되묻는 문장 (선택지 칩과 함께 감)
-_CLARIFY_REPLY = "어떤 걸 찾으세요? 아래에서 고르거나 편하게 말씀해주세요."
+# LLM이 질문 생성에 실패했을 때 쓰는 기본 되묻기 문장 (반드시 '?'로 끝남 — 캡 카운트 마커)
+_CLARIFY_REPLY = "어떤 걸 찾으세요?"
 
-# 막연하지만 맥락으로 추천은 가능할 때, 결과 뒤에 붙이는 좁히기 안내 (칩과 함께 감)
-_NARROW_HINT = " 더 좁혀볼까요?"
+# 되묻기 최대 횟수 — 이만큼 좁혔으면 다음 턴엔 무조건 추천 (무한 질문 방지)
+_MAX_NARROW_ROUNDS = 2
 
 
 class MessageService:
@@ -64,34 +64,45 @@ class MessageService:
             if updates:
                 req = req.model_copy(update=updates)
 
-        # ④ [좁힘] 막연한 요청인데 좁힐 맥락(기분·대화)조차 없으면 1회 되묻기
-        #    + 선택지 칩(fe가 버튼으로 렌더, 클릭 텍스트가 다음 메시지로 옴)
+        # ④ [좁힘 — 포위망] LLM이 "카테고리 정보 부족"이라 판단하면 되묻기.
+        #    질문·선택지는 LLM이 단계에 맞게 생성(1단계 큰 갈래 → 2단계 세부),
+        #    fe가 버튼으로 렌더하고 클릭 텍스트가 다음 메시지로 온다.
+        #    코드 안전장치: 최대 _MAX_NARROW_ROUNDS회 — 넘으면 무조건 추천 진행.
         if (
             analysis.intent == "recommend"
             and analysis.vague
-            and not req.search_keywords
-            and not req.mood
-            and not req.history
+            and self._narrow_rounds(req.history) < _MAX_NARROW_ROUNDS
         ):
+            question = analysis.question.strip() or _CLARIFY_REPLY
+            options = self._clean_options(analysis.options) or pick_options(
+                req.weather, req.time_of_day
+            )
             return MessageResponse(
-                intent="recommend",
-                reply=_CLARIFY_REPLY,
-                todos=[],
-                options=pick_options(req.weather, req.time_of_day),
+                intent="recommend", reply=question, todos=[], options=options
             )
 
         handler = self._handlers.get(analysis.intent, self._handlers["chat"])
-        resp = await handler.handle(req)
+        return await handler.handle(req)
 
-        # 막연했지만 맥락으로 추천한 경우 → 좁히기 칩을 함께 제공 (다음 턴에 더 좁혀짐)
-        if analysis.intent == "recommend" and analysis.vague and resp.todos:
-            resp = resp.model_copy(
-                update={
-                    "reply": resp.reply + _NARROW_HINT,
-                    "options": pick_options(req.weather, req.time_of_day),
-                }
-            )
-        return resp
+    @staticmethod
+    def _narrow_rounds(history: list) -> int:
+        """직전 대화에서 이미 몇 번 좁혔는지 — '?'로 끝나는 assistant 턴 수(최근 6턴)."""
+        recent = history[-6:] if history else []
+        return sum(
+            1 for t in recent if t.role == "assistant" and t.content.rstrip().endswith("?")
+        )
+
+    @staticmethod
+    def _clean_options(options: list[str]) -> list[str]:
+        """LLM 생성 선택지 검증: 공백/중복 제거, 2~6개 아니면 []( → 규칙 칩 폴백)."""
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for opt in options:
+            opt = opt.strip()
+            if opt and opt not in seen and len(opt) <= 12:
+                seen.add(opt)
+                cleaned.append(opt)
+        return cleaned[:6] if len(cleaned) >= 2 else []
 
     async def _resolve_center(
         self, req: MessageRequest, exclude: set[str] | None = None
