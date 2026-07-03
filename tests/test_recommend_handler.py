@@ -2,10 +2,19 @@ import asyncio
 
 from app.api.schemas import MessageRequest
 from app.application.handler.recommend_handler import RecommendHandler
-from app.domain.models import Place, PlannedTodo, RecommendationPlan
+from app.domain.models import (
+    Place,
+    PlannedTodo,
+    RecommendationPlan,
+    TodoItem,
+    TodoRecommendation,
+)
 
 
 class _FakeRecommender:
+    def __init__(self):
+        self.rag_called_with: list[Place] | None = None
+
     async def recommend(self, **kwargs):
         return RecommendationPlan(
             analysis="비 오는 오후",
@@ -14,6 +23,22 @@ class _FakeRecommender:
                             estimated_minutes=60, search_query="북카페"),
                 PlannedTodo(title="집 스트레칭", reason="r", category="휴식",
                             estimated_minutes=10, search_query=None),
+            ],
+        )
+
+    async def recommend_from_places(self, *, places, **kwargs):
+        # RAG 경로: 주입된 후보 중 첫 번째를 골랐다고 가정
+        self.rag_called_with = places
+        first = places[0]
+        return TodoRecommendation(
+            analysis="후보 기반 추천",
+            todos=[
+                TodoItem(
+                    title=f"{first.name} 방문", reason="가까움", category="맛집/카페",
+                    estimated_minutes=60, place_name=first.name,
+                    place_url=first.url or None, x=first.x, y=first.y,
+                    distance_m=first.distance_m,
+                )
             ],
         )
 
@@ -59,3 +84,24 @@ def test_placeless_when_no_results():
     resp = _handle(_FakePlaceFinderEmpty())
     assert len(resp.todos) == 2
     assert resp.todos[0].place_name is None
+
+
+def test_rag_path_when_keywords_confirmed():
+    # 검색어 확정 → RAG 경로: 검색 먼저 → 후보를 recommender에 주입 → LLM 선택
+    rec = _FakeRecommender()
+    h = RecommendHandler(_FakePlaceFinder(), rec, _FakeLogger(), 1500, 5)
+    req = MessageRequest(text="한식 먹고싶어", lat=37.5, lng=127.0, search_keywords=["한식"])
+    resp = asyncio.run(h.handle(req))
+    assert rec.rag_called_with is not None  # RAG 경로 탐 (후보 주입됨)
+    assert resp.todos[0].place_name == "OO북카페"  # 후보 기반 결과
+    assert resp.reply == "후보 기반 추천"
+
+
+def test_rag_falls_back_to_plan_when_no_candidates():
+    # 검색어 확정이어도 후보가 0이면 계획 경로로 폴백
+    rec = _FakeRecommender()
+    h = RecommendHandler(_FakePlaceFinderEmpty(), rec, _FakeLogger(), 1500, 5)
+    req = MessageRequest(text="한식 먹고싶어", lat=37.5, lng=127.0, search_keywords=["한식"])
+    resp = asyncio.run(h.handle(req))
+    assert rec.rag_called_with is None  # RAG 미호출
+    assert resp.reply == "비 오는 오후"  # 계획 경로 결과
