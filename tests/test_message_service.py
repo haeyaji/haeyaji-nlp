@@ -75,12 +75,27 @@ def test_geo_keyword_filtered():
 
 
 def test_vague_without_context_asks_back():
-    # 막연 + 기분/대화 없음 → 핸들러 안 가고 1회 되묻기
+    # 막연 + 기분/대화 없음 → 핸들러 안 가고 1회 되묻기 + 선택지 칩
     svc, handler = _service(Analysis(intent="recommend", vague=True))
     resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘")))
     assert handler.seen is None  # 핸들러 미호출
     assert resp.todos == []
     assert "어떤" in resp.reply  # 되묻는 문장
+    assert len(resp.options) >= 5  # fe 버튼용 선택지
+
+
+def test_clarify_options_respect_weather():
+    # 비 오는 날 되묻기 칩엔 야외 계열이 없어야 함
+    svc, _ = _service(Analysis(intent="recommend", vague=True))
+    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", weather="비, 18도")))
+    assert resp.options and "야외/산책" not in resp.options
+
+
+def test_non_vague_has_no_options():
+    # 구체적 요청엔 칩을 붙이지 않는다
+    svc, _ = _service(Analysis(intent="recommend", keywords=["맛집"]))
+    resp = asyncio.run(svc.handle(_req(text="밥집 추천", mood="배고픔")))
+    assert resp.options == []
 
 
 def test_place_type_word_never_moves_center():
