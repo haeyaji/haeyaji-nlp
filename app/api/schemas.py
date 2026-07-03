@@ -36,3 +36,10 @@ class MessageResponse(CamelModel):
     intent: Intent
     reply: str = Field(description="사용자에게 보여줄 자연어 응답")
     todos: list[TodoItem] = Field(default_factory=list, description="추천 할 일 (추천 인텐트만)")
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "좁히기 선택지 — fe가 버튼(칩)으로 렌더. "
+            "클릭 시 해당 텍스트를 그대로 다음 메시지로 전송하면 됨. 없으면 []"
+        ),
+    )
