@@ -8,6 +8,9 @@ from app.application.port.recommender import Recommender
 from app.application.query_mapper import category_code_for, keyword_from_text
 from app.domain.models import Place, PlannedTodo, TodoItem, TodoRecommendation
 
+# RAG 경로에서 LLM에 보여줄 후보 수 (카카오 keyword 검색 size 최대 15)
+_RAG_CANDIDATE_SIZE = 15
+
 
 class RecommendHandler:
     """추천 인텐트: LLM이 활동+검색어 계획 → 각 검색어로 카카오 검색 → 실제 장소 부착.
@@ -33,6 +36,13 @@ class RecommendHandler:
     async def handle(self, req: MessageRequest) -> MessageResponse:
         radius = req.radius_m or self._default_radius
 
+        # 검색어가 확정됐으면(포위망 종착/명시 요청) RAG 경로: 검색 먼저 → 후보 주입 → LLM 선택.
+        # 아직 막연하면(검색어 없음) 계획 경로: LLM 계획 → 검색 부착.
+        if req.search_keywords:
+            return await self._recommend_rag(req, radius)
+        return await self._recommend_plan(req, radius)
+
+    async def _recommend_plan(self, req: MessageRequest, radius: int) -> MessageResponse:
         # ① LLM이 활동 + 검색어 계획 (장소 아직 없음)
         #    확정된 종류(search_keywords)가 있으면 그 종류로만 계획 (몰빵 고정)
         plan = await self._recommender.recommend(
@@ -79,6 +89,63 @@ class RecommendHandler:
         result = TodoRecommendation(analysis=plan.analysis, todos=todos)
         self._logger.log(request=req.model_dump(), places=[], result=result)
         return MessageResponse(intent="recommend", reply=plan.analysis, todos=todos)
+
+    async def _recommend_rag(self, req: MessageRequest, radius: int) -> MessageResponse:
+        """RAG 경로: 확정 검색어로 카카오 검색 → 후보를 LLM에 주입 → LLM이 선택.
+
+        검색이 LLM 생성 품질을 올리는 진짜 RAG. 후보가 없으면 계획 경로로 폴백.
+        """
+        # ① 확정 검색어별 병렬 검색 → 후보 풀 구성 (중복 제거, 카테고리 필터·정렬 적용)
+        focus_codes = {
+            code for kw in req.search_keywords if (code := category_code_for(kw))
+        }
+        single_code = next(iter(focus_codes)) if len(focus_codes) == 1 else None
+        results = await asyncio.gather(
+            *(
+                self._safe_search(
+                    kw, req.lat, req.lng, radius, req.search_sort,
+                    category_code_for(kw) or single_code, size=_RAG_CANDIDATE_SIZE,
+                )
+                for kw in req.search_keywords
+            )
+        )
+        candidates: list[Place] = []
+        seen: set[str] = set()
+        for places in results:
+            for p in places:
+                if p.name not in seen:
+                    seen.add(p.name)
+                    candidates.append(p)
+
+        # 후보가 없으면 검색으로 얻을 게 없음 → 계획 경로(집/실내 활동 등)로 폴백
+        if not candidates:
+            return await self._recommend_plan(req, radius)
+
+        # ② LLM이 실제 후보 목록을 보고 골라 추천 (환각 가드는 recommender가 수행)
+        rec = await self._recommender.recommend_from_places(
+            weather=req.weather,
+            mood=req.mood,
+            time_of_day=req.time_of_day,
+            weekday=req.weekday,
+            places=candidates,
+            note=req.text,
+            user_profile=req.user_profile,
+            history=req.history,
+        )
+        self._logger.log(request=req.model_dump(), places=candidates, result=rec)
+        return MessageResponse(intent="recommend", reply=rec.analysis, todos=rec.todos)
+
+    async def _safe_search(
+        self, query: str, lat: float, lng: float, radius: int, sort: str,
+        code: str | None, size: int,
+    ) -> list[Place]:
+        """카카오 검색 1건 — 실패 시 [] (RAG 후보 수집이 한 검색 실패로 죽지 않게)."""
+        try:
+            return await self._places.search(
+                query, lat, lng, radius, size, sort=sort, category_group_code=code
+            )
+        except (httpx.HTTPError, KeyError, ValueError):
+            return []
 
     async def _search(
         self,
