@@ -1,4 +1,11 @@
-from app.application.query_mapper import pick_search_queries
+from app.application.query_mapper import category_code_for, pick_search_queries
+
+
+def test_category_code_food_vs_cafe():
+    assert category_code_for("맛집") == "FD6"
+    assert category_code_for("한식") == "FD6"
+    assert category_code_for("카페") == "CE7"
+    assert category_code_for("방탈출카페") is None  # 모르는 검색어 → 필터 없음
 
 
 def test_food_request_maps_to_restaurant():
