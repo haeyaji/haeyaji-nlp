@@ -14,4 +14,5 @@ class PlaceFinder(Protocol):
         radius_m: int,
         size: int = 5,
         sort: str = "accuracy",
+        category_group_code: str | None = None,
     ) -> list[Place]: ...

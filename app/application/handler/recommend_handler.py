@@ -5,7 +5,7 @@ import httpx
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.port.place_finder import PlaceFinder
 from app.application.port.recommender import Recommender
-from app.application.query_mapper import keyword_from_text
+from app.application.query_mapper import category_code_for, keyword_from_text
 from app.domain.models import Place, PlannedTodo, TodoItem, TodoRecommendation
 
 
@@ -34,12 +34,14 @@ class RecommendHandler:
         radius = req.radius_m or self._default_radius
 
         # ① LLM이 활동 + 검색어 계획 (장소 아직 없음)
+        #    확정된 종류(search_keywords)가 있으면 그 종류로만 계획 (몰빵 고정)
         plan = await self._recommender.recommend(
             weather=req.weather,
             mood=req.mood,
             time_of_day=req.time_of_day,
             weekday=req.weekday,
             note=req.text,
+            focus=", ".join(req.search_keywords),
             user_profile=req.user_profile,
             history=req.history,
         )
@@ -76,8 +78,10 @@ class RecommendHandler:
 
         for query in queries:
             try:
+                # 아는 검색어는 카카오 카테고리 하드 필터 (맛집=FD6 → 카페 섞임 차단)
                 places = await self._places.search(
-                    query, lat, lng, radius, self._size, sort=sort
+                    query, lat, lng, radius, self._size, sort=sort,
+                    category_group_code=category_code_for(query),
                 )
             except (httpx.HTTPError, KeyError, ValueError):
                 continue  # 검색 실패 → 다음 후보

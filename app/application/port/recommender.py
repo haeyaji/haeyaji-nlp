@@ -18,6 +18,7 @@ class Recommender(Protocol):
         time_of_day: str,
         weekday: str,
         note: str = "",
+        focus: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
     ) -> RecommendationPlan: ...

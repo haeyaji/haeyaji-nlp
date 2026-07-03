@@ -25,6 +25,7 @@ class OllamaRecommender:
         time_of_day: str,
         weekday: str,
         note: str = "",
+        focus: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
     ) -> RecommendationPlan:
@@ -34,6 +35,7 @@ class OllamaRecommender:
             time_of_day=time_of_day,
             weekday=weekday,
             note=note,
+            focus=focus,
             user_profile=user_profile,
             history=history,
         )
