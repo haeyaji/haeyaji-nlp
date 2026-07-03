@@ -155,6 +155,29 @@ def test_empty_question_falls_back():
     assert resp.reply.endswith("?")  # 기본 질문으로 대체
 
 
+def test_broad_branch_answer_forces_second_question():
+    # LLM이 vague=false로 건너뛰어도, 답이 '큰 갈래'면 코드가 세부 질문 강제
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], vague=False))
+    history = [{"role": "assistant", "content": "뭐가 당기세요?"}, {"role": "user", "content": "먹으러 가기"}]
+    resp = asyncio.run(svc.handle(_req(text="먹으러 가기", history=history[:1])))
+    assert handler.seen is None  # 추천 대신 되묻기
+    assert "음식" in resp.reply
+    assert "한식" in resp.options
+
+
+def test_branch_backstop_respects_cap():
+    # 이미 2회 좁혔으면 큰 갈래 답이어도 강제 질문 없이 추천
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], vague=False))
+    history = [
+        {"role": "assistant", "content": "뭐가 당기세요?"},
+        {"role": "user", "content": "먹으러 가기"},
+        {"role": "assistant", "content": "어떤 음식이 좋으세요?"},
+        {"role": "user", "content": "먹으러 가기"},
+    ]
+    asyncio.run(svc.handle(_req(text="먹으러 가기", history=history)))
+    assert handler.seen is not None  # 추천 진행
+
+
 def test_geo_keyword_does_not_block_center_move():
     # 분류기가 keywords에 '강남역'을 잘못 섞어도 위치 해석(중심 이동)은 살아야 함
     handler = _CaptureHandler()

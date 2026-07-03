@@ -3,7 +3,7 @@ import re
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.handler.handler import Handler
 from app.application.location_extractor import extract_location_candidates
-from app.application.option_builder import pick_options
+from app.application.option_builder import branch_question, pick_options
 from app.application.port.geocoder import Geocoder
 from app.application.port.intent_classifier import IntentClassifier
 from app.application.query_mapper import keyword_from_text
@@ -68,18 +68,24 @@ class MessageService:
         #    질문·선택지는 LLM이 단계에 맞게 생성(1단계 큰 갈래 → 2단계 세부),
         #    fe가 버튼으로 렌더하고 클릭 텍스트가 다음 메시지로 온다.
         #    코드 안전장치: 최대 _MAX_NARROW_ROUNDS회 — 넘으면 무조건 추천 진행.
-        if (
-            analysis.intent == "recommend"
-            and analysis.vague
-            and self._narrow_rounds(req.history) < _MAX_NARROW_ROUNDS
-        ):
-            question = analysis.question.strip() or _CLARIFY_REPLY
-            options = self._clean_options(analysis.options) or pick_options(
-                req.weather, req.time_of_day
-            )
-            return MessageResponse(
-                intent="recommend", reply=question, todos=[], options=options
-            )
+        if analysis.intent == "recommend" and self._narrow_rounds(req.history) < _MAX_NARROW_ROUNDS:
+            if analysis.vague:
+                # LLM이 부족 판단 → LLM 생성 질문/선택지 (부실하면 규칙 폴백)
+                question = analysis.question.strip() or _CLARIFY_REPLY
+                options = self._clean_options(analysis.options) or pick_options(
+                    req.weather, req.time_of_day
+                )
+                return MessageResponse(
+                    intent="recommend", reply=question, todos=[], options=options
+                )
+            # 코드 백스톱: 답이 '큰 갈래'(먹으러 가기 등)인데 LLM이 되묻기를
+            # 건너뛰었으면 세부 질문을 강제한다 (포위망 2단계 보장)
+            branch = branch_question(req.text)
+            if branch is not None:
+                question, options = branch
+                return MessageResponse(
+                    intent="recommend", reply=question, todos=[], options=options
+                )
 
         handler = self._handlers.get(analysis.intent, self._handlers["chat"])
         return await handler.handle(req)
