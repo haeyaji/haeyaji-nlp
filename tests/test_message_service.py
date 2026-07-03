@@ -126,6 +126,35 @@ def test_food_word_never_moves_center():
     assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)
 
 
+def test_narrow_cap_forces_recommend():
+    # 이미 두 번 좁혔으면(assistant '?' 턴 2개) vague여도 무조건 추천 진행
+    svc, handler = _service(
+        Analysis(intent="recommend", vague=True, question="더요?", options=["a", "b"])
+    )
+    history = [
+        {"role": "assistant", "content": "뭐가 당기세요?"},
+        {"role": "user", "content": "먹으러 가기"},
+        {"role": "assistant", "content": "어떤 음식이 좋으세요?"},
+        {"role": "user", "content": "한식"},
+    ]
+    resp = asyncio.run(svc.handle(_req(text="한식", history=history)))
+    assert handler.seen is not None  # 되묻지 않고 핸들러 호출
+    assert resp.intent == "recommend"
+
+
+def test_bad_llm_options_fall_back_to_rule_chips():
+    # LLM 옵션이 부실(1개)하면 규칙 칩으로 폴백
+    svc, _ = _service(Analysis(intent="recommend", vague=True, question="뭐요?", options=["하나"]))
+    resp = asyncio.run(svc.handle(_req(text="추천")))
+    assert len(resp.options) >= 5  # option_builder 칩
+
+
+def test_empty_question_falls_back():
+    svc, _ = _service(Analysis(intent="recommend", vague=True, options=["먹기", "놀기"]))
+    resp = asyncio.run(svc.handle(_req(text="추천")))
+    assert resp.reply.endswith("?")  # 기본 질문으로 대체
+
+
 def test_geo_keyword_does_not_block_center_move():
     # 분류기가 keywords에 '강남역'을 잘못 섞어도 위치 해석(중심 이동)은 살아야 함
     handler = _CaptureHandler()
