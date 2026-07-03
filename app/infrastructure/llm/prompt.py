@@ -179,29 +179,39 @@ recommend와 info 사이가 애매하면 recommend. 작업 요청·도메인 밖
 - "가까운/근처/걸어서 갈/바로 옆" → "near"
 - 언급 없으면 null.
 
-[vague — 막연함] 뭘 원하는지 아무 힌트가 없는 추천 요청이면 true.
-- true 예: "그냥 추천해줘", "추천", "아무거나".
-- 힌트가 하나라도 있으면 false: 장소 종류("밥집"), 분위기("조용한 데"), 기분/상태("심심해","우울해"), 활동("놀 데").
+[vague/question/options — 점진 좁히기] 좋은 추천을 하기에 카테고리 정보가 부족하면
+vague=true로 두고, 한 단계만 좁히는 질문(question)과 버튼 선택지(options)를 만든다.
+- 넓은 요청("뭐하지","추천해줘") → 큰 갈래를 묻는다: ["먹으러 가기","카페","놀거리","휴식","문화생활"]
+- 큰 갈래는 잡혔지만 넓을 때("먹으러 가기","밥 먹을 데") → 세부를 묻는다: ["한식","중식","일식","양식","분식","고기"]
+- 충분히 구체적이면("한식","PC방","조용한 카페") vague=false, question="", options=[].
+- options는 2~6개, 각각 그대로 검색/분류 가능한 짧은 한국어 명사.
+- 직전 대화에서 이미 두 번 좁혔으면 더 묻지 말고 vague=false로 추천을 진행한다.
+- intent가 recommend가 아니면 vague=false, question="", options=[].
 JSON만 답한다."""
 
-# few-shot — (텍스트, intent, keywords, prefer, vague)
-_CLASSIFY_FEWSHOT: list[tuple[str, str, list[str], str | None, bool]] = [
-    ("그냥 추천해줘", "recommend", [], None, True),
-    ("비 오는데 조용한 데 가고싶어", "recommend", [], None, False),
-    ("심심한데 뭐하지", "recommend", [], None, False),
-    ("강남역 맛집 추천해줘", "recommend", ["맛집"], None, False),
-    ("강남역 갈 건데 거기서 유명한 거 추천", "recommend", [], "famous", False),
-    ("가까운 밥집 추천해줘", "recommend", ["맛집"], "near", False),
-    ("홍대 방탈출 하고싶어", "recommend", ["방탈출카페"], None, False),
-    ("PC방 가고싶다", "recommend", ["PC방"], None, False),
-    ("볼링 치러 갈까", "recommend", ["볼링장"], None, False),
-    ("배고파 밥 먹을 데", "recommend", ["맛집"], None, False),
-    ("김치찌개 레시피 추천해줘", "chat", [], None, False),
-    ("노래 추천해줘", "chat", [], None, False),
-    ("오늘 날씨 어때?", "info", [], None, False),
-    ("근처 카페 사람 많아?", "info", [], None, False),
-    ("안녕! 너 누구야?", "chat", [], None, False),
-    ("파이썬으로 정렬 코드 짜줘", "chat", [], None, False),
+# few-shot — (텍스트, intent, keywords, prefer, vague, question, options)
+_CLASSIFY_FEWSHOT: list[tuple[str, str, list[str], str | None, bool, str, list[str]]] = [
+    ("그냥 추천해줘", "recommend", [], None, True,
+     "뭐가 당기세요?", ["먹으러 가기", "카페", "놀거리", "휴식", "문화생활"]),
+    ("오늘 뭐하지", "recommend", [], None, True,
+     "어떤 쪽이 끌리세요?", ["먹으러 가기", "카페", "놀거리", "휴식", "문화생활"]),
+    ("먹으러 가기", "recommend", ["맛집"], None, True,
+     "어떤 음식이 좋으세요?", ["한식", "중식", "일식", "양식", "분식", "고기"]),
+    ("배고파 밥 먹을 데", "recommend", ["맛집"], None, True,
+     "어떤 음식이 당기세요?", ["한식", "중식", "일식", "양식", "분식"]),
+    ("한식", "recommend", ["한식"], None, False, "", []),
+    ("비 오는데 조용한 데 가고싶어", "recommend", [], None, False, "", []),
+    ("강남역 맛집 추천해줘", "recommend", ["맛집"], None, False, "", []),
+    ("강남역 갈 건데 거기서 유명한 거 추천", "recommend", [], "famous", False, "", []),
+    ("가까운 밥집 추천해줘", "recommend", ["맛집"], "near", False, "", []),
+    ("홍대 방탈출 하고싶어", "recommend", ["방탈출카페"], None, False, "", []),
+    ("PC방 가고싶다", "recommend", ["PC방"], None, False, "", []),
+    ("볼링 치러 갈까", "recommend", ["볼링장"], None, False, "", []),
+    ("김치찌개 레시피 추천해줘", "chat", [], None, False, "", []),
+    ("노래 추천해줘", "chat", [], None, False, "", []),
+    ("오늘 날씨 어때?", "info", [], None, False, "", []),
+    ("안녕! 너 누구야?", "chat", [], None, False, "", []),
+    ("파이썬으로 정렬 코드 짜줘", "chat", [], None, False, "", []),
 ]
 
 _INFO_SYSTEM = """너는 할 일 추천 비서다. 사용자의 정보 질문에 답한다.
@@ -228,10 +238,17 @@ def build_classify_messages(text: str, history: list[Turn] | None = None) -> lis
     import json
 
     msgs: list[dict] = [{"role": "system", "content": _CLASSIFY_SYSTEM}]
-    for ex_text, ex_intent, ex_kw, ex_prefer, ex_vague in _CLASSIFY_FEWSHOT:
+    for ex_text, ex_intent, ex_kw, ex_prefer, ex_vague, ex_q, ex_opts in _CLASSIFY_FEWSHOT:
         msgs.append({"role": "user", "content": ex_text})
         answer = json.dumps(
-            {"intent": ex_intent, "keywords": ex_kw, "prefer": ex_prefer, "vague": ex_vague},
+            {
+                "intent": ex_intent,
+                "keywords": ex_kw,
+                "prefer": ex_prefer,
+                "vague": ex_vague,
+                "question": ex_q,
+                "options": ex_opts,
+            },
             ensure_ascii=False,
         )
         msgs.append({"role": "assistant", "content": answer})
