@@ -3,6 +3,7 @@ import re
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.handler.handler import Handler
 from app.application.location_extractor import extract_location_candidates
+from app.application.option_builder import pick_options
 from app.application.port.geocoder import Geocoder
 from app.application.port.intent_classifier import IntentClassifier
 from app.application.query_mapper import keyword_from_text
@@ -11,14 +12,11 @@ from app.application.query_mapper import keyword_from_text
 # (강남역/성수동 → 제외, PC방/볼링장/방탈출카페 → 유지)
 _GEO_SUFFIX = re.compile(r"(역|동|구|시|군|읍|면|리)$")
 
-# 막연한 요청 + 맥락(기분/대화)도 없을 때 1회 되묻는 문장
-_CLARIFY_REPLY = (
-    "어떤 걸 찾으세요? 예를 들어 '조용한 카페', '가까운 밥집', '놀 만한 데'처럼 "
-    "말해주시면 날씨에 맞춰 딱 맞게 추천해드릴게요."
-)
+# 막연한 요청 + 맥락(기분/대화)도 없을 때 1회 되묻는 문장 (선택지 칩과 함께 감)
+_CLARIFY_REPLY = "어떤 걸 찾으세요? 아래에서 고르거나 편하게 말씀해주세요."
 
-# 막연하지만 맥락으로 추천은 가능할 때, 결과 뒤에 붙이는 좁히기 안내
-_NARROW_HINT = " 더 구체적으로 말해주시면(예: '조용한 카페', '유명한 밥집') 취향에 맞게 좁혀드릴게요."
+# 막연하지만 맥락으로 추천은 가능할 때, 결과 뒤에 붙이는 좁히기 안내 (칩과 함께 감)
+_NARROW_HINT = " 더 좁혀볼까요?"
 
 
 class MessageService:
@@ -67,6 +65,7 @@ class MessageService:
                 req = req.model_copy(update=updates)
 
         # ④ [좁힘] 막연한 요청인데 좁힐 맥락(기분·대화)조차 없으면 1회 되묻기
+        #    + 선택지 칩(fe가 버튼으로 렌더, 클릭 텍스트가 다음 메시지로 옴)
         if (
             analysis.intent == "recommend"
             and analysis.vague
@@ -74,14 +73,24 @@ class MessageService:
             and not req.mood
             and not req.history
         ):
-            return MessageResponse(intent="recommend", reply=_CLARIFY_REPLY, todos=[])
+            return MessageResponse(
+                intent="recommend",
+                reply=_CLARIFY_REPLY,
+                todos=[],
+                options=pick_options(req.weather, req.time_of_day),
+            )
 
         handler = self._handlers.get(analysis.intent, self._handlers["chat"])
         resp = await handler.handle(req)
 
-        # 막연했지만 맥락으로 추천한 경우 → 좁히기 안내를 덧붙임 (다음 턴에 더 좁혀짐)
+        # 막연했지만 맥락으로 추천한 경우 → 좁히기 칩을 함께 제공 (다음 턴에 더 좁혀짐)
         if analysis.intent == "recommend" and analysis.vague and resp.todos:
-            resp = resp.model_copy(update={"reply": resp.reply + _NARROW_HINT})
+            resp = resp.model_copy(
+                update={
+                    "reply": resp.reply + _NARROW_HINT,
+                    "options": pick_options(req.weather, req.time_of_day),
+                }
+            )
         return resp
 
     async def _resolve_center(
