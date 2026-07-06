@@ -2,6 +2,7 @@ import re
 
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.handler.handler import Handler
+from app.application.intent_rules import blocked_reason
 from app.application.location_extractor import extract_location_candidates
 from app.application.option_builder import branch_question, pick_options
 from app.application.port.geocoder import Geocoder
@@ -11,6 +12,13 @@ from app.application.query_mapper import keyword_from_text
 # 지역 접미사로 끝나는 키워드는 '검색어'가 아니라 '지역'이므로 검색어에서 제외.
 # (강남역/성수동 → 제외, PC방/볼링장/방탈출카페 → 유지)
 _GEO_SUFFIX = re.compile(r"(역|동|구|시|군|읍|면|리)$")
+
+# 도메인 밖 / 인젝션 하드 거절 문구 (LLM 안 태우고 즉시 반환 → leak 원천차단)
+_DECLINE_DOMAIN = (
+    "그건 도와드리기 어려워요. 저는 오늘 갈 만한 곳이나 할 일을 추천해드려요. "
+    "어떤 활동을 찾으세요?"
+)
+_DECLINE_INJECTION = "그건 도와드릴 수 없어요. 저는 오늘 갈 만한 곳·할 일 추천만 해드려요."
 
 # LLM이 질문 생성에 실패했을 때 쓰는 기본 되묻기 문장 (반드시 '?'로 끝남 — 캡 카운트 마커)
 _CLARIFY_REPLY = "어떤 걸 찾으세요?"
@@ -44,6 +52,14 @@ class MessageService:
         }
 
     async def handle(self, req: MessageRequest) -> MessageResponse:
+        # ⓪ [하드 거절] 도메인 밖·프롬프트 인젝션은 LLM 태우기 전에 규칙으로 즉시 차단.
+        #    (7B 모델은 프롬프트로 "거절해" 해도 안 지켜서 leak → 코드로 원천차단 + 빠름)
+        reason = blocked_reason(req.text)
+        if reason == "injection":
+            return MessageResponse(intent="chat", reply=_DECLINE_INJECTION, todos=[])
+        if reason == "domain":
+            return MessageResponse(intent="chat", reply=_DECLINE_DOMAIN, todos=[])
+
         analysis = await self._classifier.classify(req.text, req.history)
 
         if analysis.intent in ("recommend", "info"):
