@@ -1,4 +1,24 @@
-from app.application.query_mapper import category_code_for, pick_search_queries
+from app.application.query_mapper import (
+    category_code_for,
+    is_outdoor,
+    is_rainy,
+    normalize_query,
+    pick_search_queries,
+)
+
+
+def test_activity_word_normalized_to_category():
+    # 소풍/피크닉은 장소명이 아니라 활동 → 공원으로 정규화 (literal '소풍' 검색 방지)
+    assert normalize_query("소풍") == "공원"
+    assert normalize_query("피크닉") == "공원"
+    assert normalize_query("카페") == "카페"  # 일반 검색어는 그대로
+
+
+def test_rainy_and_outdoor_helpers():
+    assert is_rainy("비 18도") and is_rainy("눈 옴")
+    assert not is_rainy("맑음")
+    assert is_outdoor("공원") and is_outdoor("소풍")  # 소풍→공원→야외
+    assert not is_outdoor("카페")
 
 
 def test_category_code_food_vs_cafe():

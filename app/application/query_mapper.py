@@ -27,7 +27,7 @@ _EXPLICIT: list[tuple[tuple[str, ...], str]] = [
     (("헬스", "운동하", "짐 가"), "헬스장"),
     (("노래방", "코인노래"), "노래방"),
     (("쇼핑", "아울렛"), "쇼핑몰"),
-    (("공원", "산책"), "공원"),
+    (("공원", "산책", "소풍", "피크닉", "나들이"), "공원"),
 ]
 
 # ② 형용사/분위기/기분 → 카테고리 선호
@@ -65,6 +65,26 @@ _CATEGORY_GROUP: dict[str, str] = {
 def category_code_for(query: str) -> str | None:
     """검색어에 해당하는 카카오 category_group_code (모르는 검색어는 None=필터 없음)."""
     return _CATEGORY_GROUP.get(query)
+
+
+def is_rainy(weather: str) -> bool:
+    """비/눈 등 야외 부적합 날씨인가."""
+    return any(w in weather for w in _RAINY)
+
+
+# 활동어 → 실제 검색 카테고리 정규화 (소풍/피크닉은 장소명이 아니라 활동).
+# "소풍" 그대로 검색하면 이름에 '소풍' 든 가게가 나오므로 공원으로 바꾼다.
+_QUERY_NORMALIZE = {"소풍": "공원", "피크닉": "공원", "나들이": "공원"}
+
+
+def normalize_query(query: str) -> str:
+    """검색어를 카카오에서 의미 있는 카테고리로 정규화 (활동어 → 장소종류)."""
+    return _QUERY_NORMALIZE.get(query.strip(), query)
+
+
+def is_outdoor(query: str) -> bool:
+    """정규화 후 야외 카테고리(공원/산책로)면 True."""
+    return normalize_query(query) in _OUTDOOR
 
 
 def keyword_from_text(text: str) -> str | None:
