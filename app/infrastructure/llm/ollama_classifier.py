@@ -2,6 +2,7 @@ import ollama
 
 from app.application.intent_rules import rule_intent
 from app.domain.models import Analysis, Turn
+from app.infrastructure.llm.ollama_opts import KEEP_ALIVE, opts
 from app.infrastructure.llm.prompt import build_classify_messages
 
 
@@ -27,6 +28,7 @@ class OllamaIntentClassifier:
             model=self._model,
             messages=build_classify_messages(text, history),
             format=self._schema,
-            options={"temperature": 0},  # 분류는 결정적으로
+            options=opts(0, num_predict=256),  # 분류는 결정적으로, 출력 작음
+            keep_alive=KEEP_ALIVE,
         )
         return Analysis.model_validate_json(resp["message"]["content"])

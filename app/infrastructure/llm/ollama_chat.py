@@ -1,5 +1,7 @@
 import ollama
 
+from app.infrastructure.llm.ollama_opts import KEEP_ALIVE, opts
+
 
 class OllamaChatResponder:
     """ChatResponder 포트의 Ollama 구현. 자유 텍스트 응답(정보/잡담)."""
@@ -12,6 +14,7 @@ class OllamaChatResponder:
         resp = await self._client.chat(
             model=self._model,
             messages=messages,
-            options={"temperature": 0.7},
+            options=opts(0.7, num_predict=400),
+            keep_alive=KEEP_ALIVE,
         )
         return resp["message"]["content"]
