@@ -8,8 +8,8 @@ from app.application.port.recommender import Recommender
 from app.application.query_mapper import category_code_for, keyword_from_text
 from app.domain.models import Place, PlannedTodo, TodoItem, TodoRecommendation
 
-# RAG 경로에서 LLM에 보여줄 후보 수 (카카오 keyword 검색 size 최대 15)
-_RAG_CANDIDATE_SIZE = 15
+# RAG 경로에서 LLM에 보여줄 후보 수. 많을수록 프롬프트↑(느림) → 8이면 선택엔 충분.
+_RAG_CANDIDATE_SIZE = 8
 
 
 class RecommendHandler:
