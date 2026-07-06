@@ -155,6 +155,22 @@ def test_empty_question_falls_back():
     assert resp.reply.endswith("?")  # 기본 질문으로 대체
 
 
+def test_broad_activity_narrows_first():
+    # "소풍"처럼 넓은 활동 + 구체 종류 없음 → 바로 장소 대신 카테고리 좁히기 질문
+    svc, handler = _service(Analysis(intent="recommend", vague=False))
+    resp = asyncio.run(svc.handle(_req(text="소풍 어디로 갈까", weather="맑음")))
+    assert handler.seen is None  # 추천 핸들러 미호출(좁히기)
+    assert len(resp.options) >= 5
+
+
+def test_broad_activity_with_category_recommends_directly():
+    # "데이트 카페처럼" 구체 종류가 있으면 좁히기 없이 바로 추천
+    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"], vague=False))
+    asyncio.run(svc.handle(_req(text="데이트할 카페", mood="설렘")))
+    assert handler.seen is not None  # 바로 추천
+    assert handler.seen.search_keywords == ["카페"]
+
+
 def test_broad_branch_answer_forces_second_question():
     # LLM이 vague=false로 건너뛰어도, 답이 '큰 갈래'면 코드가 세부 질문 강제
     svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], vague=False))

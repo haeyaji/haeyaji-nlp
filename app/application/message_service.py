@@ -7,7 +7,7 @@ from app.application.location_extractor import extract_location_candidates
 from app.application.option_builder import branch_question, pick_options
 from app.application.port.geocoder import Geocoder
 from app.application.port.intent_classifier import IntentClassifier
-from app.application.query_mapper import keyword_from_text
+from app.application.query_mapper import is_broad_activity, keyword_from_text
 
 # 지역 접미사로 끝나는 키워드는 '검색어'가 아니라 '지역'이므로 검색어에서 제외.
 # (강남역/성수동 → 제외, PC방/볼링장/방탈출카페 → 유지)
@@ -63,8 +63,12 @@ class MessageService:
         analysis = await self._classifier.classify(req.text, req.history)
 
         if analysis.intent in ("recommend", "info"):
-            # [무엇] 분류기가 뽑은 검색어에서 지역명 제거 (지역은 검색 중심으로만 씀)
-            keywords = [k for k in analysis.keywords if not _GEO_SUFFIX.search(k)]
+            # [무엇] 분류기 검색어에서 지역명(강남역)·넓은 활동어(소풍/데이트) 제외.
+            #  넓은 활동어는 구체 종류가 아니라 좁히기 대상이므로 검색어로 쓰지 않는다.
+            keywords = [
+                k for k in analysis.keywords
+                if not _GEO_SUFFIX.search(k) and not is_broad_activity(k)
+            ]
             # ① [위치] 텍스트에 언급된 지역이 있으면 그곳을 검색 중심으로 (FR-3.10)
             #    장소종류 단어(PC방·밥집 등)는 지역이 아니므로 후보에서 제외.
             #    (exclude는 지역명을 걸러낸 keywords만 — '강남역'이 keywords에 섞여도
@@ -85,12 +89,20 @@ class MessageService:
         #    fe가 버튼으로 렌더하고 클릭 텍스트가 다음 메시지로 온다.
         #    코드 안전장치: 최대 _MAX_NARROW_ROUNDS회 — 넘으면 무조건 추천 진행.
         if analysis.intent == "recommend" and self._narrow_rounds(req.history) < _MAX_NARROW_ROUNDS:
-            if analysis.vague:
-                # LLM이 부족 판단 → LLM 생성 질문/선택지 (부실하면 규칙 폴백)
-                question = analysis.question.strip() or _CLARIFY_REPLY
-                options = self._clean_options(analysis.options) or pick_options(
-                    req.weather, req.time_of_day
-                )
+            # 넓은 활동("소풍/데이트")인데 원문에 구체 종류(카페 등)가 없으면
+            # → 분류기가 뭘 뽑았든 무시하고 카테고리부터 좁힘 (잡탕 방지)
+            broad = is_broad_activity(req.text) and keyword_from_text(req.text) is None
+            if analysis.vague or broad:
+                if broad:
+                    # 넓은 활동은 LLM 옵션이 부적합(해외여행/공원 세분화 등) → 규칙 칩(날씨 반영)
+                    question = "어떤 걸 하고 싶으세요?"
+                    options = pick_options(req.weather, req.time_of_day)
+                else:
+                    # LLM이 부족 판단 → LLM 생성 질문/선택지 (부실하면 규칙 폴백)
+                    question = analysis.question.strip() or _CLARIFY_REPLY
+                    options = self._clean_options(analysis.options) or pick_options(
+                        req.weather, req.time_of_day
+                    )
                 return MessageResponse(
                     intent="recommend", reply=question, todos=[], options=options
                 )
