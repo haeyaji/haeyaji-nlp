@@ -5,7 +5,13 @@ import httpx
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.port.place_finder import PlaceFinder
 from app.application.port.recommender import Recommender
-from app.application.query_mapper import category_code_for, keyword_from_text
+from app.application.query_mapper import (
+    category_code_for,
+    is_outdoor,
+    is_rainy,
+    keyword_from_text,
+    normalize_query,
+)
 from app.domain.models import Place, PlannedTodo, TodoItem, TodoRecommendation
 
 # RAG 경로에서 LLM에 보여줄 후보 수. 많을수록 프롬프트↑(느림) → 8이면 선택엔 충분.
@@ -72,6 +78,15 @@ class RecommendHandler:
             ]
             todos_plan = kept or todos_plan  # 전부 걸러지면 원본 유지 (빈 추천 방지)
 
+        # ①-c 비/눈이면 야외 활동(공원·산책 등) 제외 (날씨 모순 방지)
+        if is_rainy(req.weather):
+            indoor = [
+                p
+                for p in todos_plan
+                if p.category != "야외" and not (p.search_query and is_outdoor(p.search_query))
+            ]
+            todos_plan = indoor or todos_plan
+
         # ② 각 활동의 검색 후보를 병렬로 모으고 (정렬은 요청 필터 슬롯: 가까운→distance)
         candidates = await asyncio.gather(
             *(
@@ -95,10 +110,14 @@ class RecommendHandler:
 
         검색이 LLM 생성 품질을 올리는 진짜 RAG. 후보가 없으면 계획 경로로 폴백.
         """
-        # ① 확정 검색어별 병렬 검색 → 후보 풀 구성 (중복 제거, 카테고리 필터·정렬 적용)
-        focus_codes = {
-            code for kw in req.search_keywords if (code := category_code_for(kw))
-        }
+        # ① 확정 검색어별 병렬 검색 → 후보 풀 구성 (활동어 정규화: 소풍→공원)
+        kws = [normalize_query(k) for k in req.search_keywords]
+        # 비/눈이면 야외 검색어(공원 등) 제외 → 남는 게 없으면 실내 계획 경로로 폴백
+        if is_rainy(req.weather):
+            kws = [k for k in kws if not is_outdoor(k)]
+            if not kws:
+                return await self._recommend_plan(req, radius)
+        focus_codes = {code for kw in kws if (code := category_code_for(kw))}
         single_code = next(iter(focus_codes)) if len(focus_codes) == 1 else None
         results = await asyncio.gather(
             *(
@@ -106,7 +125,7 @@ class RecommendHandler:
                     kw, req.lat, req.lng, radius, req.search_sort,
                     category_code_for(kw) or single_code, size=_RAG_CANDIDATE_SIZE,
                 )
-                for kw in req.search_keywords
+                for kw in kws
             )
         )
         candidates: list[Place] = []
@@ -163,7 +182,7 @@ class RecommendHandler:
         """
         queries: list[str] = []
         if planned.search_query:
-            queries.append(planned.search_query)
+            queries.append(normalize_query(planned.search_query))  # 소풍→공원 등
         title_kw = keyword_from_text(planned.title)
         if title_kw and title_kw not in queries:
             queries.append(title_kw)
