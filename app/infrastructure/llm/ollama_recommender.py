@@ -10,6 +10,7 @@ from app.domain.models import (
     Turn,
     UserProfile,
 )
+from app.infrastructure.llm.ollama_opts import KEEP_ALIVE, opts
 from app.infrastructure.llm.prompt import build_messages, build_rag_messages
 
 
@@ -79,7 +80,8 @@ class OllamaRecommender:
             model=self._model,
             messages=messages,
             format=self._plan_schema,  # 계획 스키마 강제
-            options={"temperature": 0.5},  # 검색어 채움 일관성 위해 약간 낮춤
+            options=opts(0.5, num_predict=700),  # 검색어 채움 일관성 위해 약간 낮춤
+            keep_alive=KEEP_ALIVE,
         )
         return RecommendationPlan.model_validate_json(resp["message"]["content"])
 
@@ -109,7 +111,8 @@ class OllamaRecommender:
             model=self._model,
             messages=messages,
             format=self._rag_schema,  # 후보 선택 스키마 강제
-            options={"temperature": 0.5},
+            options=opts(0.5, num_predict=700),
+            keep_alive=KEEP_ALIVE,
         )
         draft = _RagDraft.model_validate_json(resp["message"]["content"])
         return self._attach(draft, places)
