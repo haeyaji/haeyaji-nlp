@@ -156,11 +156,18 @@ def test_empty_question_falls_back():
 
 
 def test_broad_activity_narrows_first():
-    # "소풍"처럼 넓은 활동 + 구체 종류 없음 → 바로 장소 대신 카테고리 좁히기 질문
+    # "놀러/데이트"처럼 '뭘' 넓은 활동 + 구체 종류 없음 → 카테고리 좁히기 질문
     svc, handler = _service(Analysis(intent="recommend", vague=False))
-    resp = asyncio.run(svc.handle(_req(text="소풍 어디로 갈까", weather="맑음")))
+    resp = asyncio.run(svc.handle(_req(text="놀러 어디 갈까", weather="맑음")))
     assert handler.seen is None  # 추천 핸들러 미호출(좁히기)
     assert len(resp.options) >= 5
+
+
+def test_picnic_goes_direct_not_narrow():
+    # 소풍/나들이는 '어디로(위치)' 축 → 카테고리 안 묻고 공원 직접 추천
+    svc, handler = _service(Analysis(intent="recommend", keywords=["공원"], vague=False))
+    asyncio.run(svc.handle(_req(text="소풍 갈래", weather="맑음")))
+    assert handler.seen is not None  # 좁히기 없이 바로 추천
 
 
 def test_broad_activity_with_category_recommends_directly():
