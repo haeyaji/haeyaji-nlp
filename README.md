@@ -28,7 +28,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3) 환경변수
-cp .env.example .env       # .env에 KAKAO_REST_KEY 입력
+cp .env.example .env       # .env에 BE_BASE_URL 확인 (장소검색은 be 경유)
 
 # 4) 실행
 uvicorn app.main:app --reload --port 8000
