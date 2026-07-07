@@ -6,8 +6,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # 카카오 로컬 API
-    kakao_rest_key: str = ""
+    # be 게이트웨이 (장소검색·지오코딩 프록시). 카카오 키는 be가 보유.
+    be_base_url: str = "http://localhost:8090"
 
     # Ollama (한국어 특화 EXAONE 기본. 약한 PC는 exaone3.5:2.4b 로 .env에서 교체)
     ollama_host: str = "http://localhost:11434"

@@ -4,7 +4,7 @@ from app.domain.models import Place
 
 
 class PlaceFinder(Protocol):
-    """장소 검색 포트 (async). 구현은 infrastructure(KakaoPlaceFinder 등)."""
+    """장소 검색 포트 (async). 구현은 infrastructure(BePlaceFinder 등)."""
 
     async def search(
         self,
