@@ -49,17 +49,51 @@ _GREETING = (
     "뭐야 너", "넌 뭐", "이름이 뭐", "고마워", "감사", "잘 있었", "ㅎㅇ",
 )
 
+# ── 장소 문맥이면 오탐일 수 있는 '모호어' (도메인 밖 서브셋) ────────
+# "코딩 해줘"(작업 요청, 도메인 밖) vs "코딩할 만한 곳"(장소 추천, 도메인 안)처럼
+# 뒤에 장소 마커가 붙으면 추천 요청이므로 하드거절하면 안 된다.
+_AMBIGUOUS_DOMAIN = ("코드", "코딩", "자바", "파이썬", "리액트", "코인")
+
+# ── 장소 추천 문맥 신호 ("~할 만한 곳" 등) ────────────────────────
+_PLACE_MARKERS = (
+    "곳", "장소", "카페", "자리", "스팟",
+    "할 만한", "하기 좋은", "갈 만한", "할만한", "갈만한", "가 볼", "갈 데", "할 데",
+)
+
 BlockReason = Literal["injection", "domain"]
 
 
+def _domain_hits(text: str) -> list[str]:
+    """텍스트에 걸린 도메인 밖 키워드들. '코인노래방'은 장소이므로 '코인' 오탐 제거."""
+    hits = [k for k in _OUT_OF_DOMAIN if k in text]
+    if "코인노래" in text:
+        hits = [h for h in hits if h != "코인"]
+    return hits
+
+
+def _is_place_context(text: str) -> bool:
+    """장소 추천 문맥('~할 만한 곳' 등) 신호가 있으면 True."""
+    return any(m in text for m in _PLACE_MARKERS)
+
+
+def _rescued(text: str, hits: list[str]) -> bool:
+    """걸린 게 전부 모호어인데 장소 문맥이면 오탐 → 거절 해제 대상."""
+    return bool(hits) and all(h in _AMBIGUOUS_DOMAIN for h in hits) and _is_place_context(text)
+
+
 def blocked_reason(text: str) -> BlockReason | None:
-    """하드 거절 대상이면 사유, 아니면 None. (LLM 안 태우고 즉시 거절용)"""
+    """하드 거절 대상이면 사유, 아니면 None. (LLM 안 태우고 즉시 거절용)
+
+    장소 문맥('코딩할 만한 곳')에서 모호어(코딩/코인 등)만 걸린 경우는 오탐이므로
+    거절하지 않는다. 순수 작업 요청('코딩 해줘')·명백한 도메인 밖만 거절.
+    """
     low = text.lower()
     if any(k in text for k in _INJECTION) or any(k in low for k in _INJECTION):
         return "injection"
-    if any(k in text for k in _OUT_OF_DOMAIN):
-        return "domain"
-    return None
+    hits = _domain_hits(text)
+    if not hits or _rescued(text, hits):
+        return None
+    return "domain"
 
 
 def is_greeting(text: str) -> bool:
