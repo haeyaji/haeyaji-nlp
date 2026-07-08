@@ -1,6 +1,7 @@
 import asyncio
 
 from app.api.schemas import MessageRequest, MessageResponse
+from app.application.handler.action_handler import ActionHandler
 from app.application.message_service import MessageService
 from app.domain.models import Analysis
 
@@ -44,6 +45,7 @@ def _service(analysis: Analysis, handler=None):
         recommend_handler=handler,
         info_handler=handler,
         chat_handler=handler,
+        action_handler=ActionHandler(recommend_handler=handler),
     )
     return svc, handler
 
@@ -115,6 +117,7 @@ def test_place_type_word_never_moves_center():
         recommend_handler=handler,
         info_handler=handler,
         chat_handler=handler,
+        action_handler=ActionHandler(recommend_handler=handler),
     )
     asyncio.run(svc.handle(_req(text="PC방 가고싶어", mood="심심")))
     assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)  # 현재 위치 유지
@@ -129,6 +132,7 @@ def test_food_word_never_moves_center():
         recommend_handler=handler,
         info_handler=handler,
         chat_handler=handler,
+        action_handler=ActionHandler(recommend_handler=handler),
     )
     asyncio.run(svc.handle(_req(text="밥집 가고싶어", mood="배고픔")))
     assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)
@@ -218,6 +222,7 @@ def test_geo_keyword_does_not_block_center_move():
         recommend_handler=handler,
         info_handler=handler,
         chat_handler=handler,
+        action_handler=ActionHandler(recommend_handler=handler),
     )
     asyncio.run(svc.handle(_req(text="강남역 갈 건데 유명한 거 추천", mood="설렘")))
     assert (handler.seen.lat, handler.seen.lng) == (35.0, 129.0)  # 중심 이동됨

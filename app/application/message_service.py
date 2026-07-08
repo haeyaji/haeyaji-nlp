@@ -1,6 +1,8 @@
 import re
 
 from app.api.schemas import MessageRequest, MessageResponse
+from app.application.action_rules import parse_action
+from app.application.handler.action_handler import ActionHandler
 from app.application.handler.handler import Handler
 from app.application.intent_rules import blocked_reason
 from app.application.location_extractor import extract_location_candidates
@@ -44,9 +46,11 @@ class MessageService:
         recommend_handler: Handler,
         info_handler: Handler,
         chat_handler: Handler,
+        action_handler: ActionHandler,
     ):
         self._classifier = classifier
         self._geocoder = geocoder
+        self._action_handler = action_handler
         self._handlers: dict[str, Handler] = {
             "recommend": recommend_handler,
             "info": info_handler,
@@ -70,6 +74,12 @@ class MessageService:
                     update={"reply": f"{_REDIRECT_NOTE} {resp.reply}".strip()}
                 )
             return MessageResponse(intent="chat", reply=_DECLINE_DOMAIN, todos=[])
+
+        # ⓪-b [액션] 일정 생성/공유 요청은 규칙 파서가 잡아 액션 핸들러로 (LLM 분류 전).
+        #     실제 실행(일정 CRUD·공유)은 be가 하고, nlp는 구조화 Action만 반환.
+        action = parse_action(req.text)
+        if action is not None:
+            return await self._action_handler.handle(req, action)
 
         analysis = await self._classifier.classify(req.text, req.history)
 
