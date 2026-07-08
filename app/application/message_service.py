@@ -1,7 +1,7 @@
 import re
 
 from app.api.schemas import MessageRequest, MessageResponse
-from app.application.action_rules import parse_action
+from app.application.action_rules import parse_action, parse_time_range
 from app.application.handler.action_handler import ActionHandler
 from app.application.handler.handler import Handler
 from app.application.intent_rules import blocked_reason
@@ -10,6 +10,7 @@ from app.application.option_builder import branch_question, pick_options
 from app.application.port.geocoder import Geocoder
 from app.application.port.intent_classifier import IntentClassifier
 from app.application.query_mapper import is_broad_activity, keyword_from_text
+from app.domain.models import Action
 
 # 지역 접미사로 끝나는 키워드는 '검색어'가 아니라 '지역'이므로 검색어에서 제외.
 # (강남역/성수동 → 제외, PC방/볼링장/방탈출카페 → 유지)
@@ -137,7 +138,16 @@ class MessageService:
                 )
 
         handler = self._handlers.get(analysis.intent, self._handlers["chat"])
-        return await handler.handle(req)
+        resp = await handler.handle(req)
+        # 시간이 명시된 추천(취소된 빈 슬롯 "1시에 할거 추천" 등)이면 be가 그 시간에
+        # 넣을 수 있도록 fill 액션을 붙인다. 사용자가 todo를 고르면 be가 해당 슬롯에 저장.
+        if analysis.intent == "recommend":
+            slot = parse_time_range(req.text)
+            if slot is not None:
+                resp = resp.model_copy(
+                    update={"actions": [Action(type="schedule.fill", time_range=slot)]}
+                )
+        return resp
 
     @staticmethod
     def _narrow_rounds(history: list) -> int:

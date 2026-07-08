@@ -229,6 +229,23 @@ def test_geo_keyword_does_not_block_center_move():
     assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
 
 
+def test_cancelled_slot_attaches_fill_action():
+    # "1시 취소됐는데 그 시간 추천" → recommend + schedule.fill(1시) 부착 (be가 슬롯에 저장)
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"]))
+    resp = asyncio.run(
+        svc.handle(_req(text="1시 일정 취소됐는데 그 시간에 할거 추천해줘", weather="맑음"))
+    )
+    assert handler.seen is not None  # recommend 핸들러 호출
+    assert [a.type for a in resp.actions] == ["schedule.fill"]
+    assert resp.actions[0].time_range.start_hour == 1
+
+
+def test_recommend_without_time_has_no_fill():
+    svc, _ = _service(Analysis(intent="recommend", keywords=["맛집"]))
+    resp = asyncio.run(svc.handle(_req(text="맛집 추천", mood="배고픔")))
+    assert resp.actions == []
+
+
 def test_mixed_domain_salvages_place():
     # 도메인밖(레시피)+안(소풍) 혼합 → 통째 거절 대신 소풍(공원) 추천 + 안내 프리픽스
     svc, handler = _service(Analysis(intent="recommend"))
