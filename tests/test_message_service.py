@@ -224,6 +224,24 @@ def test_geo_keyword_does_not_block_center_move():
     assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
 
 
+def test_mixed_domain_salvages_place():
+    # 도메인밖(레시피)+안(소풍) 혼합 → 통째 거절 대신 소풍(공원) 추천 + 안내 프리픽스
+    svc, handler = _service(Analysis(intent="recommend"))
+    resp = asyncio.run(svc.handle(_req(text="소풍가서 김치찌개 레시피 추천해줘")))
+    assert handler.seen is not None                       # 추천 핸들러 호출됨
+    assert handler.seen.search_keywords == ["공원"]        # 소풍 → 공원 살림
+    assert resp.reply.startswith("그건 도와드리긴 어렵지만")   # 리다이렉트 안내
+
+
+def test_pure_domain_still_declines():
+    # 살릴 장소 신호가 없는 순수 도메인 밖은 그대로 거절
+    svc, handler = _service(Analysis(intent="recommend"))
+    resp = asyncio.run(svc.handle(_req(text="김치찌개 레시피 추천해줘")))
+    assert handler.seen is None                           # 추천 핸들러 미호출
+    assert resp.intent == "chat"
+    assert "도와드리기 어려워요" in resp.reply
+
+
 def test_vague_with_mood_recommends_directly():
     # 기분(상황 신호)이 있으면 되묻지 말고 바로 추천 (포위망 축소)
     svc, handler = _service(
