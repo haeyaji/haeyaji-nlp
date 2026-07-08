@@ -1,4 +1,9 @@
-from app.application.intent_rules import blocked_reason, is_greeting, rule_intent
+from app.application.intent_rules import (
+    blocked_reason,
+    is_greeting,
+    recovered_place_keyword,
+    rule_intent,
+)
 
 
 def test_domain_out_blocked():
@@ -52,3 +57,11 @@ def test_greeting_detection():
 def test_rule_intent_matches_blocked():
     assert rule_intent("김치찌개 레시피 추천해줘") == "chat"
     assert rule_intent("강남역 맛집 추천") is None
+
+
+def test_recovered_place_keyword():
+    # 모호어+장소문맥 → 검색어 복구 (recommend 강제 라우팅용)
+    assert recovered_place_keyword("코딩할만한곳 추천해줘") == "스터디카페"
+    # 순수 작업 요청·일반 요청은 복구 안 함 (None → 일반 분류)
+    assert recovered_place_keyword("코딩 해줘") is None
+    assert recovered_place_keyword("강남역 맛집 추천") is None

@@ -1,6 +1,6 @@
 import ollama
 
-from app.application.intent_rules import rule_intent
+from app.application.intent_rules import recovered_place_keyword, rule_intent
 from app.domain.models import Analysis, Turn
 from app.infrastructure.llm.ollama_opts import KEEP_ALIVE, opts
 from app.infrastructure.llm.prompt import build_classify_messages
@@ -22,6 +22,12 @@ class OllamaIntentClassifier:
         forced = rule_intent(text)
         if forced is not None:
             return Analysis(intent=forced, keywords=[])
+
+        # ①-b 모호어+장소문맥("코딩할 만한 곳")은 LLM의 코딩=chat 편향을 우회해
+        #     규칙으로 recommend 강제 (검색어는 복구된 장소 종류)
+        kw = recovered_place_keyword(text)
+        if kw is not None:
+            return Analysis(intent="recommend", keywords=[kw])
 
         # ② 애매하면 LLM 분류 + 키워드 추출 (직전 대화 맥락 포함)
         resp = await self._client.chat(
