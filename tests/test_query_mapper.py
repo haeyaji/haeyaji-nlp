@@ -2,6 +2,7 @@ from app.application.query_mapper import (
     category_code_for,
     is_outdoor,
     is_rainy,
+    keyword_from_text,
     normalize_query,
     pick_search_queries,
 )
@@ -37,6 +38,13 @@ def test_food_request_maps_to_restaurant():
 
 def test_explicit_cafe():
     assert "카페" in pick_search_queries("맑음", "", "조용한 카페 가고싶어")
+
+
+def test_coding_place_maps_to_studycafe():
+    # "코딩할 만한 곳"은 스터디카페로 검색 (CE7 카페 필터)
+    assert keyword_from_text("코딩할만한곳 추천해줘") == "스터디카페"
+    assert keyword_from_text("작업하기 좋은 데") == "스터디카페"
+    assert category_code_for("스터디카페") == "CE7"
 
 
 def test_rainy_removes_outdoor():

@@ -7,6 +7,7 @@
 
 from typing import Literal
 
+from app.application.query_mapper import keyword_from_text
 from app.domain.models import Intent
 
 # ── 도메인 밖 신호 (장소/활동 추천과 안 겹치게) ────────────────────
@@ -94,6 +95,17 @@ def blocked_reason(text: str) -> BlockReason | None:
     if not hits or _rescued(text, hits):
         return None
     return "domain"
+
+
+def recovered_place_keyword(text: str) -> str | None:
+    """모호어+장소문맥으로 거절 해제된 요청의 검색 키워드 (없으면 None).
+
+    "코딩할 만한 곳" → "스터디카페". LLM은 '코딩'을 chat/도메인밖으로 오분류하는
+    편향이 있어, 규칙으로 recommend를 강제 라우팅하기 위한 우회로.
+    """
+    if _rescued(text, _domain_hits(text)):
+        return keyword_from_text(text)
+    return None
 
 
 def is_greeting(text: str) -> bool:
