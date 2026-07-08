@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from app.application.handler.action_handler import ActionHandler
 from app.application.handler.chat_handler import ChatHandler
 from app.application.handler.info_handler import InfoHandler
 from app.application.handler.recommend_handler import RecommendHandler
@@ -22,20 +23,23 @@ def get_message_service() -> MessageService:
     responder = OllamaChatResponder(host=settings.ollama_host, model=settings.ollama_model)
     logger = InteractionLogger(log_dir=settings.log_dir)
 
+    recommend_handler = RecommendHandler(
+        place_finder=place_finder,
+        recommender=recommender,
+        logger=logger,
+        default_radius_m=settings.default_radius_m,
+        places_per_query=settings.places_per_query,
+    )
+
     return MessageService(
         classifier=classifier,
         geocoder=geocoder,
-        recommend_handler=RecommendHandler(
-            place_finder=place_finder,
-            recommender=recommender,
-            logger=logger,
-            default_radius_m=settings.default_radius_m,
-            places_per_query=settings.places_per_query,
-        ),
+        recommend_handler=recommend_handler,
         info_handler=InfoHandler(
             place_finder=place_finder,
             responder=responder,
             default_radius_m=settings.default_radius_m,
         ),
         chat_handler=ChatHandler(responder=responder),
+        action_handler=ActionHandler(recommend_handler=recommend_handler),
     )
