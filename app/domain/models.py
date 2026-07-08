@@ -5,8 +5,11 @@ from pydantic.alias_generators import to_camel
 
 Category = Literal["야외", "실내", "휴식", "생산성", "사람만나기", "맛집/카페"]
 
-# 사용자 메시지 의도 (라우팅 키)
-Intent = Literal["recommend", "info", "chat"]
+# 사용자 메시지 의도 (라우팅 키). "action"은 규칙 파서가 방출(LLM은 안 씀).
+Intent = Literal["recommend", "info", "chat", "action"]
+
+# be가 실행할 액션 종류 (nlp는 파싱만, 실행은 be)
+ActionType = Literal["schedule.create", "schedule.share", "schedule.fill"]
 
 
 class CamelModel(BaseModel):
@@ -100,6 +103,42 @@ class RecommendationPlan(BaseModel):
 
     analysis: str = Field(description="현재 상황 한 문장 분석")
     todos: list[PlannedTodo] = Field(description="추천 활동 3~5개")
+
+
+class TimeRange(CamelModel):
+    """일정 시간 범위 (규칙 파서가 텍스트에서 추출).
+
+    nlp은 실제 날짜가 없으므로 '몇 시'까지만 뽑는다. 오전/오후 힌트(meridiem)와
+    요일을 합쳐 절대 datetime으로 확정하는 것은 be의 몫.
+    """
+
+    start_hour: int = Field(description="시작 시(0~23, 12시간제면 meridiem과 함께)")
+    start_minute: int = 0
+    end_hour: int | None = Field(default=None, description="종료 시 (단일 시각이면 null)")
+    end_minute: int = 0
+    meridiem: Literal["am", "pm"] | None = Field(
+        default=None, description="오전/오후 힌트. 절대시각 확정은 be"
+    )
+    raw: str = Field(default="", description="원문에서 인식한 시간 표현")
+
+
+class Action(CamelModel):
+    """be가 실행할 구조화 액션. nlp은 파싱만 하고 실행/저장은 be가 한다."""
+
+    type: ActionType
+    time_range: TimeRange | None = None
+    title: str | None = Field(default=None, description="일정 제목/활동")
+    place_name: str | None = Field(default=None, description="확정된 장소 이름(있으면)")
+    place_url: str | None = None
+    target_friend: str | None = Field(
+        default=None, description="공유 대상 raw 멘션. 이름 해석은 be. '친구'면 null(be가 피커)"
+    )
+    ref: str | None = Field(
+        default=None, description='직전 액션 참조. 공유가 방금 만든 일정을 가리킬 때 "$lastCreated"'
+    )
+    requires_confirmation: bool = Field(
+        default=True, description="be가 실행 전 사용자 확인을 받을지"
+    )
 
 
 class UserProfile(CamelModel):
