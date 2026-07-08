@@ -84,33 +84,33 @@ class MessageService:
             if updates:
                 req = req.model_copy(update=updates)
 
-        # ④ [좁힘 — 포위망] LLM이 "카테고리 정보 부족"이라 판단하면 되묻기.
-        #    질문·선택지는 LLM이 단계에 맞게 생성(1단계 큰 갈래 → 2단계 세부),
-        #    fe가 버튼으로 렌더하고 클릭 텍스트가 다음 메시지로 온다.
+        # ④ [좁힘 — 포위망] 필요한 만큼만 되묻고, 아니면 날씨 기반으로 바로 추천.
+        #    fe가 선택지를 버튼으로 렌더하고 클릭 텍스트가 다음 메시지로 온다.
         #    코드 안전장치: 최대 _MAX_NARROW_ROUNDS회 — 넘으면 무조건 추천 진행.
         if analysis.intent == "recommend" and self._narrow_rounds(req.history) < _MAX_NARROW_ROUNDS:
-            # 넓은 활동("소풍/데이트")인데 원문에 구체 종류(카페 등)가 없으면
-            # → 분류기가 뭘 뽑았든 무시하고 카테고리부터 좁힘 (잡탕 방지)
-            broad = is_broad_activity(req.text) and keyword_from_text(req.text) is None
-            if analysis.vague or broad:
-                if broad:
-                    # 넓은 활동은 LLM 옵션이 부적합(해외여행/공원 세분화 등) → 규칙 칩(날씨 반영)
-                    question = "어떤 걸 하고 싶으세요?"
-                    options = pick_options(req.weather, req.time_of_day)
-                else:
-                    # LLM이 부족 판단 → LLM 생성 질문/선택지 (부실하면 규칙 폴백)
-                    question = analysis.question.strip() or _CLARIFY_REPLY
-                    options = self._clean_options(analysis.options) or pick_options(
-                        req.weather, req.time_of_day
-                    )
-                return MessageResponse(
-                    intent="recommend", reply=question, todos=[], options=options
-                )
-            # 코드 백스톱: 답이 '큰 갈래'(먹으러 가기 등)인데 LLM이 되묻기를
-            # 건너뛰었으면 세부 질문을 강제한다 (포위망 2단계 보장)
+            # (a) 큰 갈래 답("먹으러 가기")엔 세부 질문 강제 — 날씨로 한식/중식 못 고름
             branch = branch_question(req.text)
             if branch is not None:
                 question, options = branch
+                return MessageResponse(
+                    intent="recommend", reply=question, todos=[], options=options
+                )
+            # (b) 카테고리축 넓은 활동(데이트/놀러)인데 구체 종류가 없으면 종류부터 좁힘
+            #     — 날씨만으론 종류를 못 정하므로 상황 신호가 있어도 되묻는다
+            broad = is_broad_activity(req.text) and keyword_from_text(req.text) is None
+            if broad:
+                return MessageResponse(
+                    intent="recommend", reply="어떤 걸 하고 싶으세요?", todos=[],
+                    options=pick_options(req.weather, req.time_of_day),
+                )
+            # (c) 일반 막연 요청("오늘 뭐하지")은 날씨·기분·시간이 있으면 좁히지 말고
+            #     바로 날씨 기반 추천. 상황 신호가 전혀 없는 콜드스타트에서만 1회 되묻기.
+            has_context = bool(req.weather or req.mood or req.time_of_day)
+            if analysis.vague and not has_context:
+                question = analysis.question.strip() or _CLARIFY_REPLY
+                options = self._clean_options(analysis.options) or pick_options(
+                    req.weather, req.time_of_day
+                )
                 return MessageResponse(
                     intent="recommend", reply=question, todos=[], options=options
                 )

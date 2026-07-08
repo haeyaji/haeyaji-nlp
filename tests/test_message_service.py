@@ -84,10 +84,18 @@ def test_vague_without_context_asks_back():
     assert len(resp.options) >= 5  # fe 버튼용 선택지
 
 
-def test_clarify_options_respect_weather():
-    # 비 오는 날 되묻기 칩엔 야외 계열이 없어야 함
-    svc, _ = _service(Analysis(intent="recommend", vague=True))
-    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", weather="비, 18도")))
+def test_vague_with_weather_recommends_directly():
+    # 막연 요청이라도 날씨 신호가 있으면 되묻지 말고 바로 추천 (포위망 축소)
+    svc, handler = _service(Analysis(intent="recommend", vague=True))
+    resp = asyncio.run(svc.handle(_req(text="오늘 뭐하지", weather="비, 18도")))
+    assert handler.seen is not None  # 되묻지 않고 추천 핸들러 호출
+    assert resp.options == []
+
+
+def test_broad_activity_chips_respect_weather():
+    # 카테고리축 좁히기 칩은 비 오면 야외 계열 제외
+    svc, _ = _service(Analysis(intent="recommend", vague=False))
+    resp = asyncio.run(svc.handle(_req(text="놀러 갈까", weather="비, 18도")))
     assert resp.options and "야외/산책" not in resp.options
 
 
@@ -216,13 +224,12 @@ def test_geo_keyword_does_not_block_center_move():
     assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
 
 
-def test_vague_asks_even_with_mood():
-    # LLM이 부족하다고 판단하면 기분이 있어도 좁히기 질문 (포위망)
+def test_vague_with_mood_recommends_directly():
+    # 기분(상황 신호)이 있으면 되묻지 말고 바로 추천 (포위망 축소)
     svc, handler = _service(
         Analysis(intent="recommend", vague=True, question="뭐가 당기세요?",
                  options=["먹으러 가기", "카페", "놀거리"])
     )
     resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="심심")))
-    assert handler.seen is None  # 핸들러 미호출 (되묻기)
-    assert resp.reply == "뭐가 당기세요?"
-    assert resp.options == ["먹으러 가기", "카페", "놀거리"]
+    assert handler.seen is not None  # 되묻지 않고 추천
+    assert resp.intent == "recommend"
