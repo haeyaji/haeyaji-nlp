@@ -19,6 +19,8 @@ _DECLINE_DOMAIN = (
     "어떤 활동을 찾으세요?"
 )
 _DECLINE_INJECTION = "그건 도와드릴 수 없어요. 저는 오늘 갈 만한 곳·할 일 추천만 해드려요."
+# 도메인밖+안 혼합("소풍가서 김치찌개 레시피")일 때 되는 부분을 살리며 앞에 붙이는 안내
+_REDIRECT_NOTE = "그건 도와드리긴 어렵지만, 대신 갈 만한 곳을 추천해드릴게요!"
 
 # LLM이 질문 생성에 실패했을 때 쓰는 기본 되묻기 문장 (반드시 '?'로 끝남 — 캡 카운트 마커)
 _CLARIFY_REPLY = "어떤 걸 찾으세요?"
@@ -58,6 +60,15 @@ class MessageService:
         if reason == "injection":
             return MessageResponse(intent="chat", reply=_DECLINE_INJECTION, todos=[])
         if reason == "domain":
+            # 도메인밖 + 도메인안(장소)이 섞이면 통째 거절하지 말고 되는 부분을 살린다.
+            # 예: "소풍가서 김치찌개 레시피" → 레시피는 못 하지만 소풍(공원)은 추천.
+            salvage = keyword_from_text(req.text)
+            if salvage is not None:
+                req = req.model_copy(update={"search_keywords": [salvage]})
+                resp = await self._handlers["recommend"].handle(req)
+                return resp.model_copy(
+                    update={"reply": f"{_REDIRECT_NOTE} {resp.reply}".strip()}
+                )
             return MessageResponse(intent="chat", reply=_DECLINE_DOMAIN, todos=[])
 
         analysis = await self._classifier.classify(req.text, req.history)
