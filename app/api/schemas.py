@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from app.domain.models import CamelModel, Intent, TodoItem, Turn, UserProfile
+from app.domain.models import Action, CamelModel, Intent, TodoItem, Turn, UserProfile
 
 
 class MessageRequest(CamelModel):
@@ -42,4 +42,8 @@ class MessageResponse(CamelModel):
             "좁히기 선택지 — fe가 버튼(칩)으로 렌더. "
             "클릭 시 해당 텍스트를 그대로 다음 메시지로 전송하면 됨. 없으면 []"
         ),
+    )
+    actions: list[Action] = Field(
+        default_factory=list,
+        description="be가 실행할 구조화 액션(일정 생성/공유 등). nlp은 파싱만. 없으면 []",
     )
