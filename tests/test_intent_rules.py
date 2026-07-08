@@ -20,6 +20,29 @@ def test_normal_requests_pass():
         assert blocked_reason(t) is None, t
 
 
+def test_place_context_rescues_ambiguous_domain():
+    # 모호어(코딩/파이썬 등) + 장소 마커 → 오탐이므로 거절 안 함
+    for t in ["코딩할만한곳 추천해줘", "파이썬 공부하기 좋은 카페", "작업하기 좋은 곳",
+              "코딩하기 좋은 자리 추천"]:
+        assert blocked_reason(t) is None, t
+
+
+def test_coin_noraebang_not_blocked():
+    # '코인노래방'은 장소 → '코인'(주식류) 오탐 제거
+    assert blocked_reason("코인노래방 가고싶어") is None
+
+
+def test_pure_task_request_still_blocked():
+    # 장소 마커 없이 순수 작업 요청이면 그대로 거절
+    for t in ["파이썬으로 퀵소트 짜줘", "코딩 해줘", "자바 코드 디버그해줘"]:
+        assert blocked_reason(t) == "domain", t
+
+
+def test_ambiguous_plus_hard_domain_still_blocked():
+    # 모호어 + 명백한 도메인 밖(레시피 등)이 섞이면 거절 (부분처리는 별도 단계)
+    assert blocked_reason("코딩하면서 먹을 김치찌개 레시피 알려줘") == "domain"
+
+
 def test_greeting_detection():
     assert is_greeting("안녕 넌 누구야")
     assert is_greeting("고마워")
