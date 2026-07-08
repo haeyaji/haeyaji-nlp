@@ -9,13 +9,14 @@ import time
 from collections import defaultdict
 
 from app.api.schemas import MessageRequest
+from app.application.handler.action_handler import ActionHandler
 from app.application.handler.chat_handler import ChatHandler
 from app.application.handler.info_handler import InfoHandler
 from app.application.handler.recommend_handler import RecommendHandler
 from app.application.message_service import MessageService
 from app.config import settings
-from app.infrastructure.kakao.kakao_geocoder import KakaoGeocoder
-from app.infrastructure.kakao.kakao_place_finder import KakaoPlaceFinder
+from app.infrastructure.be.be_geocoder import BeGeocoder
+from app.infrastructure.be.be_place_finder import BePlaceFinder
 from app.infrastructure.llm.ollama_chat import OllamaChatResponder
 from app.infrastructure.llm.ollama_classifier import OllamaIntentClassifier
 from app.infrastructure.llm.ollama_recommender import OllamaRecommender
@@ -29,18 +30,20 @@ _DECLINE = "도와드"
 
 def build():
     m = settings.ollama_model
-    pf = KakaoPlaceFinder(rest_key=settings.kakao_rest_key)
-    gc = KakaoGeocoder(rest_key=settings.kakao_rest_key)
+    pf = BePlaceFinder(base_url=settings.be_base_url)
+    gc = BeGeocoder(base_url=settings.be_base_url)
+    recommend_handler = RecommendHandler(
+        pf, OllamaRecommender(host=settings.ollama_host, model=m),
+        InteractionLogger(log_dir=settings.log_dir),
+        settings.default_radius_m, settings.places_per_query)
     return MessageService(
         classifier=OllamaIntentClassifier(host=settings.ollama_host, model=m),
         geocoder=gc,
-        recommend_handler=RecommendHandler(
-            pf, OllamaRecommender(host=settings.ollama_host, model=m),
-            InteractionLogger(log_dir=settings.log_dir),
-            settings.default_radius_m, settings.places_per_query),
+        recommend_handler=recommend_handler,
         info_handler=InfoHandler(pf, OllamaChatResponder(host=settings.ollama_host, model=m),
                                  settings.default_radius_m),
         chat_handler=ChatHandler(OllamaChatResponder(host=settings.ollama_host, model=m)),
+        action_handler=ActionHandler(recommend_handler=recommend_handler),
     )
 
 
@@ -56,6 +59,8 @@ def judge(expect, r):
         return ok, f"intent={it},decline={_DECLINE in r.reply}"
     if expect == "narrow":
         return it == "recommend" and no > 0 and nt == 0, f"intent={it},opts={no},todos={nt}"
+    if expect == "action":
+        return it == "action" and len(r.actions) > 0, f"intent={it},actions={len(r.actions)}"
     if expect == "todo":
         return None, "SKIP(be 할일주입 필요)"
     return None, f"intent={it},todos={nt},opts={no}"  # edge
