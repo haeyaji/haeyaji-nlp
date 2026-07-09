@@ -127,10 +127,16 @@ class MessageService:
                     intent="recommend", reply=question, todos=[], options=options
                 )
             # (c) 막연 요청("오늘 뭐하지")은 한 단계 좁혀 되묻는다(포위망).
+            #     또한 방금 좁히기 질문을 던졌는데 사용자가 구체적으로 안 골랐으면
+            #     (재-막연, 예: "다른거 추천해줘") 추천으로 스킵하지 말고 다시 고르게 유도.
             #     캡(_MAX_NARROW_ROUNDS)을 넘으면 위 조건에서 걸러져 바로 추천 진행.
-            #     날씨가 있으면 날씨 기준 좁히기(실내/야외), 없으면 LLM 질문/칩.
-            if analysis.vague:
-                if req.weather:
+            reask = self._just_narrowed(req.history) and not keywords
+            if analysis.vague or reask:
+                if reask and not analysis.vague:
+                    # 칩은 보여줬는데 안 고른 경우: 고르라고 넛지 (날씨 반영 칩)
+                    question = "골라주시면 딱 맞게 추천해드릴게요 — 이 중에서 하나만 골라볼까요?"
+                    options = pick_options(req.weather, req.time_of_day)
+                elif req.weather:
                     question, options = narrow_prompt(req.weather, req.time_of_day)
                 else:
                     question = analysis.question.strip() or _CLARIFY_REPLY
@@ -152,6 +158,14 @@ class MessageService:
                     update={"actions": [Action(type="schedule.fill", time_range=slot)]}
                 )
         return resp
+
+    @staticmethod
+    def _just_narrowed(history: list) -> bool:
+        """직전 assistant 턴이 좁히기 질문('?'로 끝남)이었는지 — 사용자가 골라야 할 차례."""
+        for t in reversed(history or []):
+            if t.role == "assistant":
+                return t.content.rstrip().endswith("?")
+        return False
 
     @staticmethod
     def _narrow_rounds(history: list) -> int:
