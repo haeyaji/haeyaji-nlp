@@ -86,12 +86,13 @@ def test_vague_without_context_asks_back():
     assert len(resp.options) >= 5  # fe 버튼용 선택지
 
 
-def test_vague_with_weather_recommends_directly():
-    # 막연 요청이라도 날씨 신호가 있으면 되묻지 말고 바로 추천 (포위망 축소)
+def test_vague_narrows_even_with_weather():
+    # 막연 요청은 날씨가 있어도 한 단계 좁혀 되묻는다 (포위망)
     svc, handler = _service(Analysis(intent="recommend", vague=True))
     resp = asyncio.run(svc.handle(_req(text="오늘 뭐하지", weather="비, 18도")))
-    assert handler.seen is not None  # 되묻지 않고 추천 핸들러 호출
-    assert resp.options == []
+    assert handler.seen is None       # 되묻기 (핸들러 미호출)
+    assert resp.todos == []
+    assert len(resp.options) >= 5
 
 
 def test_broad_activity_chips_respect_weather():
@@ -264,12 +265,13 @@ def test_pure_domain_still_declines():
     assert "도와드리기 어려워요" in resp.reply
 
 
-def test_vague_with_mood_recommends_directly():
-    # 기분(상황 신호)이 있으면 되묻지 말고 바로 추천 (포위망 축소)
+def test_vague_narrows_with_mood():
+    # 기분이 있어도 막연하면 좁히기 (포위망) — LLM 생성 질문/칩 사용
     svc, handler = _service(
         Analysis(intent="recommend", vague=True, question="뭐가 당기세요?",
                  options=["먹으러 가기", "카페", "놀거리"])
     )
     resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="심심")))
-    assert handler.seen is not None  # 되묻지 않고 추천
-    assert resp.intent == "recommend"
+    assert handler.seen is None       # 되묻기
+    assert resp.reply == "뭐가 당기세요?"
+    assert resp.options == ["먹으러 가기", "카페", "놀거리"]
