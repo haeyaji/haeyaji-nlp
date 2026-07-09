@@ -60,6 +60,35 @@ curl -s -X POST http://localhost:8000/api/message \
 - 요청·응답은 camelCase (snake_case 입력도 허용). 응답: `{ intent, reply, todos, options, actions }`.
 - 문서: http://localhost:8000/docs (Swagger UI 자동 생성)
 
+## 동작
+
+**인텐트 4종** (규칙+LLM 하이브리드 라우팅)
+- `recommend` — 장소/할 일 추천 (plan 모드: LLM이 활동 계획 → 코드가 카카오 검색으로 실제 장소 부착 / RAG 모드: 검색어 확정 시 후보 주입 후 LLM 선택)
+- `info` — 날씨·주변 정보 응답
+- `chat` — 인사/잡담
+- `action` — 일정 생성/공유 (규칙 파서가 감지). nlp는 구조화 `actions` 만 반환, **실제 일정 CRUD·공유는 be가 실행**
+
+**포위망(점진 좁히기)** — 막연한 요청("오늘 뭐하지")은 바로 답하지 않고 한 단계 좁혀 되묻는다.
+날씨로 프레이밍: 비/눈이면 "실내가 좋겠어요" + 야외 칩 제외, 맑으면 야외 포함. 최대 2회 뒤엔 무조건 추천.
+선택지(`options`)는 fe가 버튼으로 렌더 → 클릭 텍스트가 다음 메시지로.
+
+**도메인 가드** — 코드작성/번역/레시피 등 도메인 밖은 규칙으로 하드 거절(LLM leak 차단).
+단 "코딩할 만한 **곳**"처럼 장소 문맥이면 거절하지 않고 추천으로(스터디카페 등),
+"소풍가서 김치찌개 레시피"처럼 도메인밖+안이 섞이면 되는 부분(소풍→공원)을 살려 추천.
+
+**검색 판단은 nlp, 실행은 be** — "무엇을 검색할지"(소풍→공원, 카테고리코드, 정렬)는 nlp 규칙(`query_mapper`),
+실제 카카오 호출·키는 be. nlp는 stateless라 맥락/개인화 데이터는 be가 매 요청에 주입.
+
+## 테스트
+
+```bash
+.venv/bin/python -m pytest -q            # 유닛 (규칙·라우터·어댑터, LLM 불필요)
+
+# 시나리오 채점 (Ollama + be 필요): 버킷별 자동 판정 → eval/results.md
+PYTHONPATH=. .venv/bin/python eval/run_eval.py         # 전체
+PYTHONPATH=. .venv/bin/python eval/run_eval.py mt      # 멀티턴(인젝션/사회공학)
+```
+
 ## 모델 교체 / 파인튜닝
 
 - 다른 모델: `.env`의 `OLLAMA_MODEL` 변경 (코드 수정 없음)
