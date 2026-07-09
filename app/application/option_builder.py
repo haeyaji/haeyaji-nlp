@@ -32,6 +32,22 @@ def branch_question(text: str) -> tuple[str, list[str]] | None:
     return _BRANCH.get(text.strip())
 
 
+def narrow_prompt(weather: str = "", time_of_day: str = "") -> tuple[str, list[str]]:
+    """날씨·시간대에 맞춘 좁히기 질문 + 칩.
+
+    비/눈이면 "실내가 좋겠다"로 프레이밍하고 칩에서도 야외를 뺀다(pick_options).
+    밤이면 시간대 문구. 그 외엔 중립. → "비 오니까 실내 어때요?" 흐름.
+    """
+    options = pick_options(weather, time_of_day)
+    if any(w in weather for w in _RAINY):
+        question = "오늘 비가 와서 실내가 좋을 것 같아요 — 어떤 게 끌려요?"
+    elif any(t in time_of_day for t in _NIGHT):
+        question = "이 시간대엔 어떤 게 끌려요?"
+    else:
+        question = "오늘 어떤 걸 하고 싶으세요?"
+    return question, options
+
+
 def pick_options(weather: str = "", time_of_day: str = "") -> list[str]:
     """날씨·시간대에 맞는 좁히기 선택지 목록 (5~6개)."""
     options = list(_BASE)

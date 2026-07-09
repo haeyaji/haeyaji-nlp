@@ -87,12 +87,14 @@ def test_vague_without_context_asks_back():
 
 
 def test_vague_narrows_even_with_weather():
-    # 막연 요청은 날씨가 있어도 한 단계 좁혀 되묻는다 (포위망)
+    # 막연 요청은 날씨가 있어도 한 단계 좁혀 되묻는다 (포위망) + 날씨로 프레이밍
     svc, handler = _service(Analysis(intent="recommend", vague=True))
     resp = asyncio.run(svc.handle(_req(text="오늘 뭐하지", weather="비, 18도")))
     assert handler.seen is None       # 되묻기 (핸들러 미호출)
     assert resp.todos == []
     assert len(resp.options) >= 5
+    assert "실내" in resp.reply        # 비 → 실내 프레이밍
+    assert "야외/산책" not in resp.options
 
 
 def test_broad_activity_chips_respect_weather():
