@@ -232,6 +232,27 @@ def test_geo_keyword_does_not_block_center_move():
     assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
 
 
+def test_reask_when_not_picked_after_narrow():
+    # 칩 보여준 뒤(직전 assistant '?') 카테고리 안 고르고 "다른거 추천" → 다시 고르게 유도
+    svc, handler = _service(Analysis(intent="recommend", vague=False))  # keywords 없음
+    history = [{"role": "assistant", "content": "오늘 비가 와서 실내가 좋을 것 같아요 — 어떤 게 끌려요?"}]
+    resp = asyncio.run(
+        svc.handle(_req(text="다른거 추천해줘", weather="비, 18도", history=history))
+    )
+    assert handler.seen is None        # 추천 핸들러 미호출 (재좁히기)
+    assert len(resp.options) >= 5
+    assert resp.reply.endswith("?")    # 캡 카운트되도록 '?'로 끝남
+
+
+def test_pick_after_narrow_proceeds():
+    # 칩 보여준 뒤 실제 카테고리를 고르면(keywords 있음) 추천으로 진행
+    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"], vague=False))
+    history = [{"role": "assistant", "content": "어떤 게 끌려요?"}]
+    asyncio.run(svc.handle(_req(text="카페", weather="비, 18도", history=history)))
+    assert handler.seen is not None            # 추천 진행
+    assert handler.seen.search_keywords == ["카페"]
+
+
 def test_cancelled_slot_attaches_fill_action():
     # "1시 취소됐는데 그 시간 추천" → recommend + schedule.fill(1시) 부착 (be가 슬롯에 저장)
     svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"]))
