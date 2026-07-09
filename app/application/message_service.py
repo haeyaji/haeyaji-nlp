@@ -125,10 +125,10 @@ class MessageService:
                     intent="recommend", reply="어떤 걸 하고 싶으세요?", todos=[],
                     options=pick_options(req.weather, req.time_of_day),
                 )
-            # (c) 일반 막연 요청("오늘 뭐하지")은 날씨·기분·시간이 있으면 좁히지 말고
-            #     바로 날씨 기반 추천. 상황 신호가 전혀 없는 콜드스타트에서만 1회 되묻기.
-            has_context = bool(req.weather or req.mood or req.time_of_day)
-            if analysis.vague and not has_context:
+            # (c) 막연 요청("오늘 뭐하지")은 한 단계 좁혀 되묻는다(포위망).
+            #     캡(_MAX_NARROW_ROUNDS)을 넘으면 위 조건에서 걸러져 바로 추천 진행.
+            #     질문·칩은 LLM 생성 우선, 부실하면 규칙 칩(날씨 반영)으로 폴백.
+            if analysis.vague:
                 question = analysis.question.strip() or _CLARIFY_REPLY
                 options = self._clean_options(analysis.options) or pick_options(
                     req.weather, req.time_of_day
