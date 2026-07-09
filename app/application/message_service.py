@@ -6,7 +6,7 @@ from app.application.handler.action_handler import ActionHandler
 from app.application.handler.handler import Handler
 from app.application.intent_rules import blocked_reason
 from app.application.location_extractor import extract_location_candidates
-from app.application.option_builder import branch_question, pick_options
+from app.application.option_builder import branch_question, narrow_prompt, pick_options
 from app.application.port.geocoder import Geocoder
 from app.application.port.intent_classifier import IntentClassifier
 from app.application.query_mapper import is_broad_activity, keyword_from_text
@@ -121,18 +121,22 @@ class MessageService:
             #     — 날씨만으론 종류를 못 정하므로 상황 신호가 있어도 되묻는다
             broad = is_broad_activity(req.text) and keyword_from_text(req.text) is None
             if broad:
+                # 날씨로 프레이밍한 질문 + 날씨 반영 칩 ("비 오니까 실내 어때요?")
+                question, options = narrow_prompt(req.weather, req.time_of_day)
                 return MessageResponse(
-                    intent="recommend", reply="어떤 걸 하고 싶으세요?", todos=[],
-                    options=pick_options(req.weather, req.time_of_day),
+                    intent="recommend", reply=question, todos=[], options=options
                 )
             # (c) 막연 요청("오늘 뭐하지")은 한 단계 좁혀 되묻는다(포위망).
             #     캡(_MAX_NARROW_ROUNDS)을 넘으면 위 조건에서 걸러져 바로 추천 진행.
-            #     질문·칩은 LLM 생성 우선, 부실하면 규칙 칩(날씨 반영)으로 폴백.
+            #     날씨가 있으면 날씨 기준 좁히기(실내/야외), 없으면 LLM 질문/칩.
             if analysis.vague:
-                question = analysis.question.strip() or _CLARIFY_REPLY
-                options = self._clean_options(analysis.options) or pick_options(
-                    req.weather, req.time_of_day
-                )
+                if req.weather:
+                    question, options = narrow_prompt(req.weather, req.time_of_day)
+                else:
+                    question = analysis.question.strip() or _CLARIFY_REPLY
+                    options = self._clean_options(analysis.options) or pick_options(
+                        req.weather, req.time_of_day
+                    )
                 return MessageResponse(
                     intent="recommend", reply=question, todos=[], options=options
                 )
