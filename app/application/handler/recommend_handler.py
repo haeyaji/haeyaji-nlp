@@ -12,7 +12,7 @@ from app.application.query_mapper import (
     keyword_from_text,
     normalize_query,
 )
-from app.domain.models import Place, PlannedTodo, TodoItem, TodoRecommendation
+from app.domain.models import Place, PlannedTodo, TodoItem
 
 # RAG 경로에서 LLM에 보여줄 후보 수. 많을수록 프롬프트↑(느림) → 8이면 선택엔 충분.
 _RAG_CANDIDATE_SIZE = 8
@@ -29,13 +29,11 @@ class RecommendHandler:
         self,
         place_finder: PlaceFinder,
         recommender: Recommender,
-        logger,
         default_radius_m: int,
         places_per_query: int,
     ):
         self._places = place_finder
         self._recommender = recommender
-        self._logger = logger
         self._default_radius = default_radius_m
         self._size = places_per_query
 
@@ -101,8 +99,6 @@ class RecommendHandler:
         for planned, places in zip(todos_plan, candidates):
             todos.append(self._assign(planned, places, used))
 
-        result = TodoRecommendation(analysis=plan.analysis, todos=todos)
-        self._logger.log(request=req.model_dump(), places=[], result=result)
         return MessageResponse(intent="recommend", reply=plan.analysis, todos=todos)
 
     async def _recommend_rag(self, req: MessageRequest, radius: int) -> MessageResponse:
@@ -151,7 +147,6 @@ class RecommendHandler:
             user_profile=req.user_profile,
             history=req.history,
         )
-        self._logger.log(request=req.model_dump(), places=candidates, result=rec)
         return MessageResponse(intent="recommend", reply=rec.analysis, todos=rec.todos)
 
     async def _safe_search(

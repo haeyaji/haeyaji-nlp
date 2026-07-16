@@ -1,9 +1,6 @@
 # 환경/비밀
 .env
 
-# 로그 = 학습데이터 (각자 로컬에 쌓임, 커밋 X)
-data/logs/
-
 # Python
 __pycache__/
 *.py[cod]
