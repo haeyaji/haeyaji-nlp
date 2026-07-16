@@ -17,9 +17,6 @@ class Settings(BaseSettings):
     default_radius_m: int = 1500
     places_per_query: int = 5
 
-    # 로그
-    log_dir: str = "data/logs"
-
     # CORS (fe 직접 연결 dev용. 쉼표 구분. be 경유 프로덕션에선 불필요)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

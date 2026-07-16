@@ -21,7 +21,6 @@ from app.infrastructure.llm.ollama_chat import OllamaChatResponder
 from app.infrastructure.llm.ollama_classifier import OllamaIntentClassifier
 from app.infrastructure.llm.ollama_recommender import OllamaRecommender
 from app.domain.models import Turn
-from app.infrastructure.log.interaction_logger import InteractionLogger
 from eval.scenarios import MULTI_TURN, SCENARIOS
 
 # 두 종류 거절 문구(도와드리기/도와드릴) 공통 접두 "도와드" 로 거절 판정
@@ -34,7 +33,6 @@ def build():
     gc = BeGeocoder(base_url=settings.be_base_url)
     recommend_handler = RecommendHandler(
         pf, OllamaRecommender(host=settings.ollama_host, model=m),
-        InteractionLogger(log_dir=settings.log_dir),
         settings.default_radius_m, settings.places_per_query)
     return MessageService(
         classifier=OllamaIntentClassifier(host=settings.ollama_host, model=m),

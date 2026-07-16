@@ -58,13 +58,8 @@ class _FakePlaceFinderEmpty:
         return []
 
 
-class _FakeLogger:
-    def log(self, **kwargs):
-        pass
-
-
 def _handle(place_finder):
-    h = RecommendHandler(place_finder, _FakeRecommender(), _FakeLogger(), 1500, 5)
+    h = RecommendHandler(place_finder, _FakeRecommender(), 1500, 5)
     return asyncio.run(h.handle(MessageRequest(text="비 오는데 뭐하지", lat=37.5, lng=127.0)))
 
 
@@ -89,7 +84,7 @@ def test_placeless_when_no_results():
 def test_rag_path_when_keywords_confirmed():
     # 검색어 확정 → RAG 경로: 검색 먼저 → 후보를 recommender에 주입 → LLM 선택
     rec = _FakeRecommender()
-    h = RecommendHandler(_FakePlaceFinder(), rec, _FakeLogger(), 1500, 5)
+    h = RecommendHandler(_FakePlaceFinder(), rec, 1500, 5)
     req = MessageRequest(text="한식 먹고싶어", lat=37.5, lng=127.0, search_keywords=["한식"])
     resp = asyncio.run(h.handle(req))
     assert rec.rag_called_with is not None  # RAG 경로 탐 (후보 주입됨)
@@ -100,7 +95,7 @@ def test_rag_path_when_keywords_confirmed():
 def test_rag_falls_back_to_plan_when_no_candidates():
     # 검색어 확정이어도 후보가 0이면 계획 경로로 폴백
     rec = _FakeRecommender()
-    h = RecommendHandler(_FakePlaceFinderEmpty(), rec, _FakeLogger(), 1500, 5)
+    h = RecommendHandler(_FakePlaceFinderEmpty(), rec, 1500, 5)
     req = MessageRequest(text="한식 먹고싶어", lat=37.5, lng=127.0, search_keywords=["한식"])
     resp = asyncio.run(h.handle(req))
     assert rec.rag_called_with is None  # RAG 미호출
