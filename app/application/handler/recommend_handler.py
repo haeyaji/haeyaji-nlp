@@ -58,6 +58,7 @@ class RecommendHandler:
             focus=", ".join(req.search_keywords),
             user_profile=req.user_profile,
             history=req.history,
+            schedule_context=req.schedule_context,
         )
 
         # ①-b 확정 종류의 카테고리 코드(맛집→FD6 등)가 있으면, 다른 종류의 계획을
@@ -84,6 +85,10 @@ class RecommendHandler:
                 if p.category != "야외" and not (p.search_query and is_outdoor(p.search_query))
             ]
             todos_plan = indoor or todos_plan
+
+        # ①-d 다음 일정까지 빈 시간(gap)이 있으면 그 안에 끝낼 활동만 남긴다.
+        #     (be가 gapMinutes를 계산해 전달 — 3시간 등산을 2시간 gap에 추천 방지)
+        todos_plan = self._gap_filter(todos_plan, self._gap_minutes(req))
 
         # ② 각 활동의 검색 후보를 병렬로 모으고 (정렬은 요청 필터 슬롯: 가까운→distance)
         candidates = await asyncio.gather(
@@ -146,8 +151,11 @@ class RecommendHandler:
             note=req.text,
             user_profile=req.user_profile,
             history=req.history,
+            schedule_context=req.schedule_context,
         )
-        return MessageResponse(intent="recommend", reply=rec.analysis, todos=rec.todos)
+        # gap이 있으면 빈 시간 안에 끝낼 활동만 남긴다 (계획 경로와 동일 규칙)
+        todos = self._gap_filter(rec.todos, self._gap_minutes(req))
+        return MessageResponse(intent="recommend", reply=rec.analysis, todos=todos)
 
     async def _safe_search(
         self, query: str, lat: float, lng: float, radius: int, sort: str,
@@ -198,6 +206,23 @@ class RecommendHandler:
             if places:
                 return places
         return []
+
+    @staticmethod
+    def _gap_minutes(req: MessageRequest) -> int | None:
+        """be가 준 빈 시간(분). scheduleContext 없거나 미지정이면 None(필터 안 함)."""
+        return req.schedule_context.gap_minutes if req.schedule_context else None
+
+    @staticmethod
+    def _gap_filter(todos: list, gap: int | None) -> list:
+        """estimated_minutes ≤ gap인 활동만 남긴다. PlannedTodo/TodoItem 공통.
+
+        gap이 None이면 그대로. 전부 gap을 넘겨 비면(모든 추천이 너무 김) 원본 유지
+        — 빈 추천 응답보다는 낫다(코드베이스의 기존 폴백 관례와 동일).
+        """
+        if gap is None:
+            return todos
+        fit = [t for t in todos if t.estimated_minutes <= gap]
+        return fit or todos
 
     @staticmethod
     def _assign(planned: PlannedTodo, places: list[Place], used: set[str]) -> TodoItem:
