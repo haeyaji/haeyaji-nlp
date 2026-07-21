@@ -6,6 +6,7 @@ from app.domain.models import (
     Place,
     PlannedTodo,
     RecommendationPlan,
+    ScheduleContext,
     TodoItem,
     TodoRecommendation,
 )
@@ -100,3 +101,32 @@ def test_rag_falls_back_to_plan_when_no_candidates():
     resp = asyncio.run(h.handle(req))
     assert rec.rag_called_with is None  # RAG 미호출
     assert resp.reply == "비 오는 오후"  # 계획 경로 결과
+
+
+def test_gap_filters_out_too_long_activities():
+    # gap=30분이면 60분짜리 북카페는 빠지고 10분짜리 스트레칭만 남는다
+    h = RecommendHandler(_FakePlaceFinder(), _FakeRecommender(), 1500, 5)
+    req = MessageRequest(
+        text="뭐하지", lat=37.5, lng=127.0,
+        schedule_context=ScheduleContext(gap_minutes=30),
+    )
+    resp = asyncio.run(h.handle(req))
+    assert len(resp.todos) == 1
+    assert resp.todos[0].estimated_minutes == 10
+
+
+def test_gap_keeps_all_when_none():
+    # scheduleContext 없으면 필터 안 함 — 둘 다 유지
+    resp = _handle(_FakePlaceFinder())
+    assert len(resp.todos) == 2
+
+
+def test_gap_falls_back_when_all_too_long():
+    # gap이 모든 활동보다 짧으면(전부 초과) 빈 추천 대신 원본 유지
+    h = RecommendHandler(_FakePlaceFinder(), _FakeRecommender(), 1500, 5)
+    req = MessageRequest(
+        text="뭐하지", lat=37.5, lng=127.0,
+        schedule_context=ScheduleContext(gap_minutes=5),
+    )
+    resp = asyncio.run(h.handle(req))
+    assert len(resp.todos) == 2  # 폴백
