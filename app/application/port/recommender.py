@@ -1,6 +1,13 @@
 from typing import Protocol
 
-from app.domain.models import Place, RecommendationPlan, TodoRecommendation, Turn, UserProfile
+from app.domain.models import (
+    Place,
+    RecommendationPlan,
+    ScheduleContext,
+    TodoRecommendation,
+    Turn,
+    UserProfile,
+)
 
 
 class Recommender(Protocol):
@@ -22,6 +29,7 @@ class Recommender(Protocol):
         focus: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
+        schedule_context: ScheduleContext | None = None,
     ) -> RecommendationPlan: ...
 
     async def recommend_from_places(
@@ -35,4 +43,5 @@ class Recommender(Protocol):
         note: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
+        schedule_context: ScheduleContext | None = None,
     ) -> TodoRecommendation: ...

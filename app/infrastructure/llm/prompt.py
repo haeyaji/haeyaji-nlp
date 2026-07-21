@@ -7,7 +7,7 @@
 - 최근 대화 히스토리 주입 (후속 질문 대응)
 """
 
-from app.domain.models import Place, Turn, UserProfile
+from app.domain.models import Place, ScheduleContext, Turn, UserProfile
 
 # 작은 모델 품질을 위해 최근 N턴만 사용
 MAX_HISTORY_TURNS = 6
@@ -132,6 +132,29 @@ def _format_profile(profile: UserProfile | None) -> str:
     return f"[사용자 프로필 — 추천에 반영하되 특정 장소 단정은 금지]\n{body}\n\n"
 
 
+def _format_schedule(sc: ScheduleContext | None) -> str:
+    """일정 상황을 프롬프트 블록으로. 없거나 비면 빈 문자열(주입 안 함)."""
+    if sc is None:
+        return ""
+    parts: list[str] = []
+    if sc.gap_minutes is not None:
+        parts.append(
+            f"다음 일정까지 빈 시간이 약 {sc.gap_minutes}분뿐 — "
+            f"이 시간 안에 끝낼 수 있는 활동만 추천(estimated_minutes를 이 이하로)"
+        )
+    if sc.next_todo_at:
+        parts.append(f"다음 일정 시작: {sc.next_todo_at}")
+    if sc.day_todos:
+        todos = ", ".join(
+            f"{t.title}({t.start_time}~{t.end_time})" for t in sc.day_todos
+        )
+        parts.append(f"오늘 이미 잡힌 일정(시간대 겹치지 않게): {todos}")
+    if not parts:
+        return ""
+    body = "\n".join(f"- {p}" for p in parts)
+    return f"[일정 상황 — 반영]\n{body}\n\n"
+
+
 def build_messages(
     *,
     weather: str,
@@ -142,6 +165,7 @@ def build_messages(
     focus: str = "",
     user_profile: UserProfile | None = None,
     history: list[Turn] | None = None,
+    schedule_context: ScheduleContext | None = None,
 ) -> list[dict]:
     # 사용자가 직접 말한 요청("PC방 가고싶어" 등)이 있으면 최우선 반영
     note_line = f"사용자 요청(최우선 반영, 단 안전은 챙김): {note}\n" if note else ""
@@ -155,6 +179,7 @@ def build_messages(
     user = (
         f"{note_line}"
         f"{focus_line}"
+        f"{_format_schedule(schedule_context)}"
         f"{_format_profile(user_profile)}"
         f"날씨: {weather or '정보 없음'}\n"
         f"기분: {mood or '정보 없음'}\n"
@@ -226,9 +251,11 @@ def build_rag_messages(
     note: str = "",
     user_profile: UserProfile | None = None,
     history: list[Turn] | None = None,
+    schedule_context: ScheduleContext | None = None,
 ) -> list[dict]:
     user = (
         f"사용자 요청: {note or '(없음)'}\n"
+        f"{_format_schedule(schedule_context)}"
         f"{_format_profile(user_profile)}"
         f"날씨: {weather or '정보 없음'}\n"
         f"기분: {mood or '정보 없음'}\n"
