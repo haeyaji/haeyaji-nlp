@@ -141,6 +141,35 @@ class Action(CamelModel):
     )
 
 
+class DayTodo(CamelModel):
+    """그날 이미 잡힌 일정 한 건 (참고용 — 추천이 시간대에 겹치지 않게).
+
+    be가 계산해 넣어 보낸다. nlp은 절대 datetime을 모르므로 시:분 표기만 받는다.
+    """
+
+    title: str = Field(description="일정 제목")
+    start_time: str = Field(description='시작 시각 "HH:MM"', examples=["14:00"])
+    end_time: str = Field(description='종료 시각 "HH:MM"', examples=["15:00"])
+
+
+class ScheduleContext(CamelModel):
+    """be가 계산해 주입하는 '일정 상황'. 전부 optional — 없으면 일반 추천.
+
+    nlp은 실제 날짜/절대시각을 모르므로 판단·계산은 be가 하고,
+    nlp은 받아서 프롬프트 반영(요청1) + gap 초과 활동 필터(요청2)만 한다.
+    """
+
+    next_todo_at: str | None = Field(
+        default=None, description="다음 일정 시작 시각(ISO). 없으면 null"
+    )
+    gap_minutes: int | None = Field(
+        default=None, description="지금~다음 일정까지 빈 시간(분). 이 안에 끝낼 활동만 추천"
+    )
+    day_todos: list[DayTodo] = Field(
+        default_factory=list, description="그날 이미 잡힌 일정(겹침 회피용 참고)"
+    )
+
+
 class UserProfile(CamelModel):
     """사용자 선호 프로필. be가 설문/선택이력으로 채워 전달한다.
 

@@ -1,6 +1,14 @@
 from pydantic import Field
 
-from app.domain.models import Action, CamelModel, Intent, TodoItem, Turn, UserProfile
+from app.domain.models import (
+    Action,
+    CamelModel,
+    Intent,
+    ScheduleContext,
+    TodoItem,
+    Turn,
+    UserProfile,
+)
 
 
 class MessageRequest(CamelModel):
@@ -19,6 +27,13 @@ class MessageRequest(CamelModel):
     )
     history: list[Turn] = Field(
         default_factory=list, description="최근 대화 턴 (be가 세션에서 구성). 없으면 단발 처리."
+    )
+    schedule_context: ScheduleContext | None = Field(
+        None,
+        description=(
+            "일정 상황 (be가 계산해 전달). 다음 일정까지 빈 시간·그날 일정 등. "
+            "없으면 일반 추천. gapMinutes가 있으면 그 안에 끝낼 활동만 추천."
+        ),
     )
     # 내부용: 분류기가 추출한 검색어를 service가 채워 핸들러로 전달 (클라이언트는 안 보냄)
     search_keywords: list[str] = Field(

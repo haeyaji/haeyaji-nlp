@@ -5,6 +5,7 @@ from app.domain.models import (
     Category,
     Place,
     RecommendationPlan,
+    ScheduleContext,
     TodoItem,
     TodoRecommendation,
     Turn,
@@ -65,6 +66,7 @@ class OllamaRecommender:
         focus: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
+        schedule_context: ScheduleContext | None = None,
     ) -> RecommendationPlan:
         messages = build_messages(
             weather=weather,
@@ -75,6 +77,7 @@ class OllamaRecommender:
             focus=focus,
             user_profile=user_profile,
             history=history,
+            schedule_context=schedule_context,
         )
         resp = await self._client.chat(
             model=self._model,
@@ -96,6 +99,7 @@ class OllamaRecommender:
         note: str = "",
         user_profile: UserProfile | None = None,
         history: list[Turn] | None = None,
+        schedule_context: ScheduleContext | None = None,
     ) -> TodoRecommendation:
         messages = build_rag_messages(
             weather=weather,
@@ -106,6 +110,7 @@ class OllamaRecommender:
             note=note,
             user_profile=user_profile,
             history=history,
+            schedule_context=schedule_context,
         )
         resp = await self._client.chat(
             model=self._model,
