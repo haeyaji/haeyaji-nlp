@@ -31,6 +31,15 @@ def test_day_todos_and_next_at_injected():
     assert "2026-07-16T14:00:00" in body
 
 
+def test_day_todo_without_end_time():
+    # be가 종료시각 없이 보내도(endTime=None) 검증 통과 + 프롬프트 반영
+    sc = ScheduleContext(day_todos=[DayTodo(title="회의", start_time="14:00")])
+    body = _user_content(
+        build_messages(weather="", mood="", time_of_day="", weekday="", schedule_context=sc)
+    )
+    assert "회의" in body and "14:00~)" in body
+
+
 def test_no_schedule_context_no_block():
     body = _user_content(
         build_messages(weather="맑음", mood="", time_of_day="", weekday="")

@@ -178,7 +178,9 @@ class DayTodo(CamelModel):
 
     title: str = Field(description="일정 제목")
     start_time: str = Field(description='시작 시각 "HH:MM"', examples=["14:00"])
-    end_time: str = Field(description='종료 시각 "HH:MM"', examples=["15:00"])
+    end_time: str | None = Field(
+        default=None, description='종료 시각 "HH:MM" (be 할일엔 종료시각 없을 수 있음 → optional)'
+    )
 
 
 class ScheduleContext(CamelModel):
