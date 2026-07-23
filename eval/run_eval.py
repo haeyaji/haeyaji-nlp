@@ -47,7 +47,7 @@ def build():
 
 def judge(expect, r):
     """(pass|None, detail). None = 채점 제외(수동확인)."""
-    it, nt, no = r.intent, len(r.todos), len(r.options)
+    it, nt, nc = r.intent, len(r.todos), len(r.categories)
     if expect == "info":
         return it == "info", f"intent={it}"
     if expect == "recommend":
@@ -56,12 +56,13 @@ def judge(expect, r):
         ok = it == "chat" and _DECLINE in r.reply
         return ok, f"intent={it},decline={_DECLINE in r.reply}"
     if expect == "narrow":
-        return it == "recommend" and no > 0 and nt == 0, f"intent={it},opts={no},todos={nt}"
+        # 1단계 카테고리 후보 제시 (recommend_category + categories)
+        return it == "recommend_category" and nc > 0, f"intent={it},cats={nc},todos={nt}"
     if expect == "action":
         return it == "action" and len(r.actions) > 0, f"intent={it},actions={len(r.actions)}"
     if expect == "todo":
         return None, "SKIP(be 할일주입 필요)"
-    return None, f"intent={it},todos={nt},opts={no}"  # edge
+    return None, f"intent={it},todos={nt},cats={nc}"  # edge
 
 
 async def run_multiturn(svc):
