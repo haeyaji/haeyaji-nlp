@@ -82,7 +82,8 @@ class RecommendHandler:
             indoor = [
                 p
                 for p in todos_plan
-                if p.category != "야외" and not (p.search_query and is_outdoor(p.search_query))
+                if p.category != "NATURE_WALK"
+                and not (p.search_query and is_outdoor(p.search_query))
             ]
             todos_plan = indoor or todos_plan
 
