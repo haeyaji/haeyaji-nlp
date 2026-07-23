@@ -20,9 +20,9 @@ class _FakeRecommender:
         return RecommendationPlan(
             analysis="비 오는 오후",
             todos=[
-                PlannedTodo(title="북카페서 책", reason="r", category="휴식",
+                PlannedTodo(title="북카페서 책", reason="r", category="REST_HEALING",
                             estimated_minutes=60, search_query="북카페"),
-                PlannedTodo(title="집 스트레칭", reason="r", category="휴식",
+                PlannedTodo(title="집 스트레칭", reason="r", category="REST_HEALING",
                             estimated_minutes=10, search_query=None),
             ],
         )
@@ -35,7 +35,7 @@ class _FakeRecommender:
             analysis="후보 기반 추천",
             todos=[
                 TodoItem(
-                    title=f"{first.name} 방문", reason="가까움", category="맛집/카페",
+                    title=f"{first.name} 방문", reason="가까움", category="RESTAURANT",
                     estimated_minutes=60, place_name=first.name,
                     place_url=first.url or None, x=first.x, y=first.y,
                     distance_m=first.distance_m,

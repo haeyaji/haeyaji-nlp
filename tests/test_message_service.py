@@ -3,7 +3,7 @@ import asyncio
 from app.api.schemas import MessageRequest, MessageResponse
 from app.application.handler.action_handler import ActionHandler
 from app.application.message_service import MessageService
-from app.domain.models import Analysis
+from app.domain.models import Analysis, TodoItem, UserProfile
 
 
 class _FakeClassifier:
@@ -29,12 +29,13 @@ class _AnywhereGeocoder:
 class _CaptureHandler:
     """핸들러로 들어온 req를 캡처해 슬롯 매핑을 검증한다."""
 
-    def __init__(self):
+    def __init__(self, todos=None):
         self.seen: MessageRequest | None = None
+        self._todos = todos or []
 
     async def handle(self, req: MessageRequest) -> MessageResponse:
         self.seen = req
-        return MessageResponse(intent="recommend", reply="분석.", todos=[])
+        return MessageResponse(intent="recommend", reply="분석.", todos=self._todos)
 
 
 def _service(analysis: Analysis, handler=None):
@@ -56,6 +57,8 @@ def _req(**kwargs):
     return MessageRequest(**base)
 
 
+# ── 명시 종류 → 1단계 건너뛰고 바로 장소 추천 ──────────────────────────
+
 def test_prefer_near_maps_to_distance_sort():
     svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], prefer="near"))
     asyncio.run(svc.handle(_req(text="가까운 밥집", mood="배고픔")))
@@ -76,192 +79,151 @@ def test_geo_keyword_filtered():
     assert handler.seen.search_keywords == ["방탈출"]
 
 
-def test_vague_without_context_asks_back():
-    # 막연 + 기분/대화 없음 → 핸들러 안 가고 1회 되묻기 + 선택지 칩
-    svc, handler = _service(Analysis(intent="recommend", vague=True))
-    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘")))
-    assert handler.seen is None  # 핸들러 미호출
-    assert resp.todos == []
-    assert "어떤" in resp.reply  # 되묻는 문장
-    assert len(resp.options) >= 5  # fe 버튼용 선택지
-
-
-def test_vague_narrows_even_with_weather():
-    # 막연 요청은 날씨가 있어도 한 단계 좁혀 되묻는다 (포위망) + 날씨로 프레이밍
-    svc, handler = _service(Analysis(intent="recommend", vague=True))
-    resp = asyncio.run(svc.handle(_req(text="오늘 뭐하지", weather="비, 18도")))
-    assert handler.seen is None       # 되묻기 (핸들러 미호출)
-    assert resp.todos == []
-    assert len(resp.options) >= 5
-    assert "실내" in resp.reply        # 비 → 실내 프레이밍
-    assert "야외/산책" not in resp.options
-
-
-def test_broad_activity_chips_respect_weather():
-    # 카테고리축 좁히기 칩은 비 오면 야외 계열 제외
-    svc, _ = _service(Analysis(intent="recommend", vague=False))
-    resp = asyncio.run(svc.handle(_req(text="놀러 갈까", weather="비, 18도")))
-    assert resp.options and "야외/산책" not in resp.options
-
-
-def test_non_vague_has_no_options():
-    # 구체적 요청엔 칩을 붙이지 않는다
-    svc, _ = _service(Analysis(intent="recommend", keywords=["맛집"]))
+def test_explicit_keyword_skips_category_step():
+    # 구체 종류가 있으면 카테고리 후보 없이 바로 장소 추천
+    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"]))
     resp = asyncio.run(svc.handle(_req(text="밥집 추천", mood="배고픔")))
-    assert resp.options == []
+    assert handler.seen is not None
+    assert resp.categories == []
 
 
 def test_place_type_word_never_moves_center():
-    # "PC방 가고싶어"의 'PC방'(장소종류)이 지역으로 오인돼 중심이 튀면 안 됨
     handler = _CaptureHandler()
     svc = MessageService(
         classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["PC방"])),
         geocoder=_AnywhereGeocoder(),
-        recommend_handler=handler,
-        info_handler=handler,
-        chat_handler=handler,
+        recommend_handler=handler, info_handler=handler, chat_handler=handler,
         action_handler=ActionHandler(recommend_handler=handler),
     )
     asyncio.run(svc.handle(_req(text="PC방 가고싶어", mood="심심")))
-    assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)  # 현재 위치 유지
+    assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)
 
 
 def test_food_word_never_moves_center():
-    # '밥집'은 분류기 keywords가 "맛집"으로 정규화돼도 장소종류 사전으로 걸러진다
     handler = _CaptureHandler()
     svc = MessageService(
         classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["맛집"])),
         geocoder=_AnywhereGeocoder(),
-        recommend_handler=handler,
-        info_handler=handler,
-        chat_handler=handler,
+        recommend_handler=handler, info_handler=handler, chat_handler=handler,
         action_handler=ActionHandler(recommend_handler=handler),
     )
     asyncio.run(svc.handle(_req(text="밥집 가고싶어", mood="배고픔")))
     assert (handler.seen.lat, handler.seen.lng) == (37.5, 127.0)
 
 
-def test_narrow_cap_forces_recommend():
-    # 이미 두 번 좁혔으면(assistant '?' 턴 2개) vague여도 무조건 추천 진행
-    svc, handler = _service(
-        Analysis(intent="recommend", vague=True, question="더요?", options=["a", "b"])
-    )
-    history = [
-        {"role": "assistant", "content": "뭐가 당기세요?"},
-        {"role": "user", "content": "먹으러 가기"},
-        {"role": "assistant", "content": "어떤 음식이 좋으세요?"},
-        {"role": "user", "content": "한식"},
-    ]
-    resp = asyncio.run(svc.handle(_req(text="한식", history=history)))
-    assert handler.seen is not None  # 되묻지 않고 핸들러 호출
-    assert resp.intent == "recommend"
-
-
-def test_bad_llm_options_fall_back_to_rule_chips():
-    # LLM 옵션이 부실(1개)하면 규칙 칩으로 폴백
-    svc, _ = _service(Analysis(intent="recommend", vague=True, question="뭐요?", options=["하나"]))
-    resp = asyncio.run(svc.handle(_req(text="추천")))
-    assert len(resp.options) >= 5  # option_builder 칩
-
-
-def test_empty_question_falls_back():
-    svc, _ = _service(Analysis(intent="recommend", vague=True, options=["먹기", "놀기"]))
-    resp = asyncio.run(svc.handle(_req(text="추천")))
-    assert resp.reply.endswith("?")  # 기본 질문으로 대체
-
-
-def test_broad_activity_narrows_first():
-    # "놀러/데이트"처럼 '뭘' 넓은 활동 + 구체 종류 없음 → 카테고리 좁히기 질문
-    svc, handler = _service(Analysis(intent="recommend", vague=False))
-    resp = asyncio.run(svc.handle(_req(text="놀러 어디 갈까", weather="맑음")))
-    assert handler.seen is None  # 추천 핸들러 미호출(좁히기)
-    assert len(resp.options) >= 5
-
-
 def test_picnic_goes_direct_not_narrow():
     # 소풍/나들이는 '어디로(위치)' 축 → 카테고리 안 묻고 공원 직접 추천
-    svc, handler = _service(Analysis(intent="recommend", keywords=["공원"], vague=False))
+    svc, handler = _service(Analysis(intent="recommend", keywords=["공원"]))
     asyncio.run(svc.handle(_req(text="소풍 갈래", weather="맑음")))
-    assert handler.seen is not None  # 좁히기 없이 바로 추천
+    assert handler.seen is not None
 
 
 def test_broad_activity_with_category_recommends_directly():
-    # "데이트 카페처럼" 구체 종류가 있으면 좁히기 없이 바로 추천
-    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"], vague=False))
+    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"]))
     asyncio.run(svc.handle(_req(text="데이트할 카페", mood="설렘")))
-    assert handler.seen is not None  # 바로 추천
+    assert handler.seen is not None
     assert handler.seen.search_keywords == ["카페"]
-
-
-def test_broad_branch_answer_forces_second_question():
-    # LLM이 vague=false로 건너뛰어도, 답이 '큰 갈래'면 코드가 세부 질문 강제
-    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], vague=False))
-    history = [{"role": "assistant", "content": "뭐가 당기세요?"}, {"role": "user", "content": "먹으러 가기"}]
-    resp = asyncio.run(svc.handle(_req(text="먹으러 가기", history=history[:1])))
-    assert handler.seen is None  # 추천 대신 되묻기
-    assert "음식" in resp.reply
-    assert "한식" in resp.options
-
-
-def test_branch_backstop_respects_cap():
-    # 이미 2회 좁혔으면 큰 갈래 답이어도 강제 질문 없이 추천
-    svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"], vague=False))
-    history = [
-        {"role": "assistant", "content": "뭐가 당기세요?"},
-        {"role": "user", "content": "먹으러 가기"},
-        {"role": "assistant", "content": "어떤 음식이 좋으세요?"},
-        {"role": "user", "content": "먹으러 가기"},
-    ]
-    asyncio.run(svc.handle(_req(text="먹으러 가기", history=history)))
-    assert handler.seen is not None  # 추천 진행
 
 
 def test_geo_keyword_does_not_block_center_move():
-    # 분류기가 keywords에 '강남역'을 잘못 섞어도 위치 해석(중심 이동)은 살아야 함
+    # keywords에 지역명(강남역)이 섞여도 위치 해석은 살고, 지역명은 검색어에서 빠진다
     handler = _CaptureHandler()
     svc = MessageService(
-        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["강남역"])),
+        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=["강남역", "맛집"])),
         geocoder=_AnywhereGeocoder(),
-        recommend_handler=handler,
-        info_handler=handler,
-        chat_handler=handler,
+        recommend_handler=handler, info_handler=handler, chat_handler=handler,
         action_handler=ActionHandler(recommend_handler=handler),
     )
-    asyncio.run(svc.handle(_req(text="강남역 갈 건데 유명한 거 추천", mood="설렘")))
+    asyncio.run(svc.handle(_req(text="강남역 맛집 추천", mood="배고픔")))
     assert (handler.seen.lat, handler.seen.lng) == (35.0, 129.0)  # 중심 이동됨
-    assert handler.seen.search_keywords == []  # 지역명은 검색어에서 제외
+    assert handler.seen.search_keywords == ["맛집"]               # 지역명 제외
 
 
-def test_reask_when_not_picked_after_narrow():
-    # 칩 보여준 뒤(직전 assistant '?') 카테고리 안 고르고 "다른거 추천" → 다시 고르게 유도
-    svc, handler = _service(Analysis(intent="recommend", vague=False))  # keywords 없음
-    history = [{"role": "assistant", "content": "오늘 비가 와서 실내가 좋을 것 같아요 — 어떤 게 끌려요?"}]
+# ── 1단계: 막연하면 카테고리 후보 제시 ─────────────────────────────────
+
+def test_vague_returns_category_candidates():
+    svc, handler = _service(Analysis(intent="recommend", keywords=[]))
+    resp = asyncio.run(svc.handle(_req(text="오늘 뭐하지")))
+    assert handler.seen is None                    # 장소 핸들러 미호출
+    assert resp.intent == "recommend_category"
+    assert 2 <= len(resp.categories) <= 4
+    assert resp.todos == []
+
+
+def test_category_candidates_are_valid_codes():
+    from app.application.category_map import ALL_CODES
+    svc, _ = _service(Analysis(intent="recommend", keywords=[]))
+    resp = asyncio.run(svc.handle(_req(text="추천해줘", weather="맑음")))
+    codes = [c.code for c in resp.categories]
+    assert len(codes) == len(set(codes))           # 중복 없음
+    assert all(c in ALL_CODES for c in codes)
+    assert all(c.label and c.keywords for c in resp.categories)
+
+
+def test_step1_rainy_excludes_nature():
+    svc, _ = _service(Analysis(intent="recommend", keywords=[]))
+    resp = asyncio.run(svc.handle(_req(text="뭐하지", weather="비, 18도")))
+    assert resp.intent == "recommend_category"
+    assert "NATURE_WALK" not in [c.code for c in resp.categories]
+
+
+def test_step1_profile_boosts_preferred():
+    svc, _ = _service(Analysis(intent="recommend", keywords=[]))
     resp = asyncio.run(
-        svc.handle(_req(text="다른거 추천해줘", weather="비, 18도", history=history))
+        svc.handle(_req(text="추천", user_profile=UserProfile(preferred_categories=["맛집"])))
     )
-    assert handler.seen is None        # 추천 핸들러 미호출 (재좁히기)
-    assert len(resp.options) >= 5
-    assert resp.reply.endswith("?")    # 캡 카운트되도록 '?'로 끝남
+    assert resp.categories[0].code == "RESTAURANT"  # 명시 취향 최우선
 
 
-def test_pick_after_narrow_proceeds():
-    # 칩 보여준 뒤 실제 카테고리를 고르면(keywords 있음) 추천으로 진행
-    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"], vague=False))
-    history = [{"role": "assistant", "content": "어떤 게 끌려요?"}]
-    asyncio.run(svc.handle(_req(text="카페", weather="비, 18도", history=history)))
-    assert handler.seen is not None            # 추천 진행
-    assert handler.seen.search_keywords == ["카페"]
+def test_negation_returns_step1_excluding_category():
+    # "카페 말고" → 다시 카테고리 후보 제시하되 카페는 제외
+    svc, handler = _service(Analysis(intent="recommend", keywords=["카페"]))
+    resp = asyncio.run(svc.handle(_req(text="카페 말고 딴거", weather="맑음")))
+    assert handler.seen is None
+    assert resp.intent == "recommend_category"
+    assert "CAFE_DESSERT" not in [c.code for c in resp.categories]
 
+
+# ── 2단계: 선택 카테고리 → 그 안에서 장소 ──────────────────────────────
+
+def test_selected_category_goes_to_places():
+    svc, handler = _service(Analysis(intent="recommend", keywords=[]))
+    asyncio.run(svc.handle(_req(text="이걸로", selected_category="CAFE_DESSERT")))
+    assert handler.seen is not None                          # 장소 핸들러 호출
+    assert handler.seen.search_keywords == ["카페", "디저트"]  # 카테고리 검색어로 치환
+
+
+def test_selected_category_tags_todos():
+    todo = TodoItem(title="x", reason="r", category="RESTAURANT", estimated_minutes=30)
+    handler = _CaptureHandler(todos=[todo])
+    svc = MessageService(
+        classifier=_FakeClassifier(Analysis(intent="recommend", keywords=[])),
+        geocoder=_FakeGeocoder(),
+        recommend_handler=handler, info_handler=handler, chat_handler=handler,
+        action_handler=ActionHandler(recommend_handler=handler),
+    )
+    resp = asyncio.run(svc.handle(_req(text="이걸로", selected_category="CAFE_DESSERT")))
+    assert resp.todos[0].category == "CAFE_DESSERT"          # 선택 카테고리로 태깅 통일
+
+
+# ── 액션/도메인 (기존 유지) ────────────────────────────────────────────
 
 def test_cancelled_slot_attaches_fill_action():
-    # "1시 취소됐는데 그 시간 추천" → recommend + schedule.fill(1시) 부착 (be가 슬롯에 저장)
     svc, handler = _service(Analysis(intent="recommend", keywords=["맛집"]))
     resp = asyncio.run(
         svc.handle(_req(text="1시 일정 취소됐는데 그 시간에 할거 추천해줘", weather="맑음"))
     )
-    assert handler.seen is not None  # recommend 핸들러 호출
+    assert handler.seen is not None
     assert [a.type for a in resp.actions] == ["schedule.fill"]
     assert resp.actions[0].time_range.start_hour == 1
+
+
+def test_cancelled_slot_with_category_step_keeps_fill():
+    # 막연+시간 → 1단계 카테고리라도 be가 슬롯 유지하도록 fill 부착
+    svc, _ = _service(Analysis(intent="recommend", keywords=[]))
+    resp = asyncio.run(svc.handle(_req(text="1시 취소됐는데 그때 뭐하지", weather="맑음")))
+    assert resp.intent == "recommend_category"
+    assert [a.type for a in resp.actions] == ["schedule.fill"]
 
 
 def test_recommend_without_time_has_no_fill():
@@ -271,30 +233,16 @@ def test_recommend_without_time_has_no_fill():
 
 
 def test_mixed_domain_salvages_place():
-    # 도메인밖(레시피)+안(소풍) 혼합 → 통째 거절 대신 소풍(공원) 추천 + 안내 프리픽스
     svc, handler = _service(Analysis(intent="recommend"))
     resp = asyncio.run(svc.handle(_req(text="소풍가서 김치찌개 레시피 추천해줘")))
-    assert handler.seen is not None                       # 추천 핸들러 호출됨
-    assert handler.seen.search_keywords == ["공원"]        # 소풍 → 공원 살림
-    assert resp.reply.startswith("그건 도와드리긴 어렵지만")   # 리다이렉트 안내
+    assert handler.seen is not None
+    assert handler.seen.search_keywords == ["공원"]
+    assert resp.reply.startswith("그건 도와드리긴 어렵지만")
 
 
 def test_pure_domain_still_declines():
-    # 살릴 장소 신호가 없는 순수 도메인 밖은 그대로 거절
     svc, handler = _service(Analysis(intent="recommend"))
     resp = asyncio.run(svc.handle(_req(text="김치찌개 레시피 추천해줘")))
-    assert handler.seen is None                           # 추천 핸들러 미호출
+    assert handler.seen is None
     assert resp.intent == "chat"
     assert "도와드리기 어려워요" in resp.reply
-
-
-def test_vague_narrows_with_mood():
-    # 기분이 있어도 막연하면 좁히기 (포위망) — LLM 생성 질문/칩 사용
-    svc, handler = _service(
-        Analysis(intent="recommend", vague=True, question="뭐가 당기세요?",
-                 options=["먹으러 가기", "카페", "놀거리"])
-    )
-    resp = asyncio.run(svc.handle(_req(text="그냥 추천해줘", mood="심심")))
-    assert handler.seen is None       # 되묻기
-    assert resp.reply == "뭐가 당기세요?"
-    assert resp.options == ["먹으러 가기", "카페", "놀거리"]
