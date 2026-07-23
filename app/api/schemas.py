@@ -3,6 +3,8 @@ from pydantic import Field
 from app.domain.models import (
     Action,
     CamelModel,
+    Category,
+    CategoryOption,
     Intent,
     ScheduleContext,
     TodoItem,
@@ -35,6 +37,13 @@ class MessageRequest(CamelModel):
             "없으면 일반 추천. gapMinutes가 있으면 그 안에 끝낼 활동만 추천."
         ),
     )
+    selected_category: Category | None = Field(
+        None,
+        description=(
+            "추천 2단계: 유저가 1단계에서 고른 카테고리 code (be가 실어 재호출). "
+            "있으면 그 카테고리 안에서만 장소 추천. 없으면 1단계(카테고리 후보) 진행."
+        ),
+    )
     # 내부용: 분류기가 추출한 검색어를 service가 채워 핸들러로 전달 (클라이언트는 안 보냄)
     search_keywords: list[str] = Field(
         default_factory=list, description="내부용(service가 채움): 검색할 장소 종류"
@@ -51,12 +60,16 @@ class MessageResponse(CamelModel):
     intent: Intent
     reply: str = Field(description="사용자에게 보여줄 자연어 응답")
     todos: list[TodoItem] = Field(default_factory=list, description="추천 할 일 (추천 인텐트만)")
-    options: list[str] = Field(
+    categories: list[CategoryOption] = Field(
         default_factory=list,
         description=(
-            "좁히기 선택지 — fe가 버튼(칩)으로 렌더. "
-            "클릭 시 해당 텍스트를 그대로 다음 메시지로 전송하면 됨. 없으면 []"
+            "추천 1단계 카테고리 후보 (intent=recommend_category일 때만). "
+            "fe가 칩으로 렌더 → 유저 선택 → be로 choice 전송 + nlp 2단계 호출. 없으면 []"
         ),
+    )
+    options: list[str] = Field(
+        default_factory=list,
+        description="(레거시) 자유텍스트 좁히기 칩. 카테고리 2단계 도입 후 미사용. 항상 []",
     )
     actions: list[Action] = Field(
         default_factory=list,
