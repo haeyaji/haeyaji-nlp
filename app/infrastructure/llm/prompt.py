@@ -150,7 +150,9 @@ def _format_schedule(sc: ScheduleContext | None) -> str:
         parts.append(f"다음 일정 시작: {sc.next_todo_at}")
     if sc.day_todos:
         todos = ", ".join(
-            f"{t.title}({t.start_time}~{t.end_time})" for t in sc.day_todos
+            f"{t.title}({t.start_time}~{t.end_time})" if t.end_time
+            else f"{t.title}({t.start_time}~)"
+            for t in sc.day_todos
         )
         parts.append(f"오늘 이미 잡힌 일정(시간대 겹치지 않게): {todos}")
     if not parts:
