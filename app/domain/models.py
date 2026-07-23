@@ -3,10 +3,24 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-Category = Literal["야외", "실내", "휴식", "생산성", "사람만나기", "맛집/카페"]
+# 카테고리 10종 (be/fe 공용 계약 code). fe가 라벨·아이콘으로 표시, be가 취향 학습.
+# 추천 1단계에서 이 code로 후보를 제시하고, 각 TodoItem도 이 code로 태깅한다.
+Category = Literal[
+    "CAFE_DESSERT",      # 카페·디저트
+    "RESTAURANT",        # 맛집
+    "NATURE_WALK",       # 산책·자연
+    "SPORTS_ACTIVITY",   # 운동·액티비티
+    "CULTURE_EXHIBIT",   # 문화·전시
+    "INDOOR_PLAY",       # 실내놀이(방탈출·보드게임 등)
+    "REST_HEALING",      # 휴식·힐링
+    "STUDY_WORK",        # 공부·작업
+    "SOCIAL",            # 사람만남
+    "SHOPPING",          # 쇼핑
+]
 
 # 사용자 메시지 의도 (라우팅 키). "action"은 규칙 파서가 방출(LLM은 안 씀).
-Intent = Literal["recommend", "info", "chat", "action"]
+# "recommend_category"는 추천 1단계(카테고리 후보 제시) 응답 전용 — 코드가 방출.
+Intent = Literal["recommend", "recommend_category", "info", "chat", "action"]
 
 # be가 실행할 액션 종류 (nlp는 파싱만, 실행은 be)
 ActionType = Literal["schedule.create", "schedule.share", "schedule.fill"]
@@ -138,6 +152,21 @@ class Action(CamelModel):
     )
     requires_confirmation: bool = Field(
         default=True, description="be가 실행 전 사용자 확인을 받을지"
+    )
+
+
+class CategoryOption(CamelModel):
+    """추천 1단계에서 제시하는 카테고리 후보 한 개.
+
+    fe가 칩/카드로 렌더하고, 유저가 고르면 be로 {shown, selected, keywords}를 보낸다.
+    keywords는 그 카테고리에서 밀 세부 검색어(예: 감성카페) — be가 키워드축 취향 학습.
+    """
+
+    code: Category
+    label: str = Field(description="fe 표시 라벨 (예: 카페·디저트)")
+    reason: str = Field(default="", description="지금 이걸 제안하는 짧은 이유 (상황 근거)")
+    keywords: list[str] = Field(
+        default_factory=list, description="이 카테고리 세부 검색어 (be 키워드 학습용)"
     )
 
 
