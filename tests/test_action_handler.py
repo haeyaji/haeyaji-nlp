@@ -20,7 +20,7 @@ class _FakeRecommend:
 
 def _place_todo():
     return TodoItem(
-        title="스타벅스에서 작업", reason="r", category="맛집/카페",
+        title="스타벅스에서 작업", reason="r", category="CAFE_DESSERT",
         estimated_minutes=60, place_name="스타벅스 강남점", place_url="http://x",
     )
 
